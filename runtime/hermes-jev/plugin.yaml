@@ -1,0 +1,20 @@
+name: hermes-jev
+version: "1.0.0"
+description: "Choose the next advertised Hermes tool with Jev inside each agent iteration."
+author: Hermes Control
+hooks:
+  - transform_tool_result
+  - post_tool_call
+  - on_session_end
+provides_tools: []
+provides_hooks:
+  - transform_tool_result
+  - post_tool_call
+  - on_session_end
+provides_middleware:
+  - llm_execution
+  - llm_request
+requires_env: []
+python_dependencies:
+  - httpx
+  - jsonschema

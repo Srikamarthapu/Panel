@@ -1,0 +1,100 @@
+/* Models: assignments first, connected choices second, discovery by request. */
+.modelWorkspaceV2 { gap: 26px; }
+.modelWorkspaceV2 .modelAssignments { gap: 14px; }
+.modelWorkspaceV2 .modelAssignment { padding: 20px; gap: 10px; background: #171b18; border-color: #323b35; transition: border-color .16s ease, background .16s ease; }
+.modelWorkspaceV2 .modelAssignment:hover { border-color: #66786a; }
+.modelWorkspaceV2 .modelAssignment[aria-pressed=true] { background: #233229; border-color: #7f9e88; }
+.modelAssignment__label { display: flex; justify-content: space-between; gap: 12px; font-size: 12px !important; }
+.modelAssignment__state { font-size: 10px; color: #b5c3b9; min-height: 24px; margin-top: 3px; }
+.modelWorkspaceV2 .modelAssignment strong { font-size: 16px; line-height: 1.45; font-weight: 500; overflow-wrap: anywhere; }
+.modelWorkspaceV2 .modelAssignment small { font-size: 11px; line-height: 1.5; color: #b0bcb4; }
+.modelAccessBadge { display: inline-flex; align-items: center; padding: 4px 7px; border-radius: 5px; background: #a8cbb110; color: #b9d6c3; font-size: 10px; line-height: 1.35; white-space: nowrap; }
+.modelAccessBadge[data-state=tested], .modelAccessBadge[data-state=verified] { color: #c1e8cc; background: #aad7b81c; }
+.modelAccessBadge[data-state=test-failed], .modelAccessBadge[data-state=unavailable], .modelAccessBadge[data-state=needs-setup] { color: #e0bc99; background: #d8a57714; }
+.modelWorkspaceV2 .modelCatalogLayout { grid-template-columns: 200px minmax(0,1fr); gap: 30px; }
+.modelWorkspaceV2 .modelProviders { overflow: visible; max-height: none; gap: 6px; }
+.modelSectionLabel { display: block; margin: 0 0 12px; font-size: 10px; color: #a3afa7; letter-spacing: .7px; }
+.modelWorkspaceV2 .modelProviders > .modelSectionLabel { padding: 0 12px; }
+.modelWorkspaceV2 .modelProviders button { min-height: 58px; padding: 12px; font-size: 12px; }
+.modelWorkspaceV2 .modelProviders button > span { min-width: 0; }
+.modelWorkspaceV2 .modelProviders em { font-size: 10px; margin-top: 5px; }
+.providerConnectionDot { display: block; height: 5px; width: 5px; border-radius: 50%; background: #7a817c; flex-shrink: 0; }
+.providerConnectionDot[data-connected=true] { background: #a8cfb5; }
+.modelWorkspaceV2 .modelProviders .modelAllConnections { border-top: 1px solid #343d37; border-radius: 0; margin: 8px 0 0; min-height: 46px; font-size: 11px; }
+.modelOtherProviders { padding-top: 6px; }
+.modelOtherProviders summary { display: flex; align-items: center; justify-content: space-between; font-size: 11px; padding: 10px 12px; cursor: pointer; color: #b8c2bc; }
+.modelOtherProviders summary::before { content: '+'; margin-right: 8px; }
+.modelOtherProviders[open] summary::before { content: '−'; }
+.modelOtherProviders summary span { margin-left: auto; color: #a0aca4; }
+.modelOtherProviders button { width: 100%; }
+.modelProviderEmpty { padding: 12px; margin: 0; font-size: 12px; color: #b4c0b8; line-height: 1.6; }
+.modelWorkspaceV2 .modelCatalogResults { gap: 16px; }
+.modelWorkspaceV2 .modelCatalogToolbar { align-items: flex-start; margin-bottom: 0; }
+.modelWorkspaceV2 .modelCatalogToolbar .modelSectionLabel { margin-bottom: 6px; }
+.modelWorkspaceV2 .modelCatalogToolbar h2 { font-size: 22px; letter-spacing: -.5px; font-weight: 500; }
+.modelWorkspaceV2 .modelCatalogToolbar .buttonLink { display: flex; align-items: center; gap: 7px; padding: 9px 11px; font-size: 11px; border-radius: 8px; }
+.modelWorkspaceV2 .modelSearch { gap: 15px; }
+.modelWorkspaceV2 .modelSearch > label { flex: 1; min-width: 0; position: relative; display: flex; align-items: center; }
+.modelWorkspaceV2 .modelSearch label > svg { position: absolute; left: 13px; color: #aab7ad; }
+.modelWorkspaceV2 .modelSearch input { width: 100%; padding-left: 38px; background: #171e19; border-color: #39463d; }
+.modelWorkspaceV2 .modelCatalogRow { display: block; padding: 17px 18px; background: #151b17; }
+.modelWorkspaceV2 .modelCatalogRow[data-selected=true] { background: #203028; }
+.modelRowSummary { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.modelRowIdentity { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 10px; min-width: 0; }
+.modelWorkspaceV2 .modelRowIdentity strong { display: block; flex-basis: 100%; font-size: 14px; color: #e0e8e2; font-weight: 500; }
+.modelProviderLabel { font-size: 10px; color: #bac5bd; }
+.modelRowActions { flex-shrink: 0; }
+.modelWorkspaceV2 .modelRowActions button, .modelWorkspaceV2 .modelTestButton { min-height: 34px; border: 1px solid #526d5a; border-radius: 7px; color: #d5e6d9; background: #2c4233; padding: 7px 11px; font-size: 11px; }
+.modelWorkspaceV2 .modelRowActions button:disabled { opacity: .6; cursor: default; }
+.modelSelectedLabel { display: inline-flex; gap: 5px; align-items: center; color: #c0d9c9; font-size: 11px; }
+.modelRowDetails { margin-top: 10px; }
+.modelRowDetails > summary { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; width: fit-content; color: #b4c0b7; font-size: 10px; cursor: pointer; }
+.modelRowDetails > summary::before { content: '+'; width: 9px; }
+.modelRowDetails[open] > summary::before { content: '−'; }
+.modelRowDetails > summary span { color: #c4d3c8; font-size: 9px; }
+.modelRowDetailBody { display: grid; gap: 11px; padding-top: 15px; }
+.modelRowDetailBody dl { margin: 0; display: grid; gap: 8px; font-size: 11px; }
+.modelRowDetailBody dl > div { display: grid; grid-template-columns: 72px minmax(0,1fr); gap: 12px; }
+.modelRowDetailBody dt { color: #a3b0a7; }
+.modelRowDetailBody dd { margin: 0; color: #d1ddd5; overflow-wrap: anywhere; }
+.modelWorkspaceV2 .modelRowDetailBody code { font-size: 11px; margin: 0; color: #d1ddd5; }
+.modelWorkspaceV2 .modelRowDetailBody p { display: block; margin: 0; font-size: 11px; line-height: 1.6; color: #b9c6be; }
+.modelTestButton { justify-self: start; }
+.modelConnectionHelp { padding: 16px; background: #25281d; border: 1px solid #575b3d; border-radius: 9px; }
+.modelConnectionHelp strong { display: block; font-size: 13px; font-weight: 500; color: #e4e5ce; }
+.modelConnectionHelp p { font-size: 12px; color: #cfceb7; line-height: 1.6; margin: 8px 0 0; }
+.modelUnavailableToggle { display: flex; align-items: center; gap: 8px; color: #bac5bd; font-size: 11px; }
+.modelUnavailableToggle input { accent-color: #aacfb6; }
+.modelWorkspaceV2 .modelCustom { background: #171d19; border-color: #37433a; }
+.modelWorkspaceV2 .modelCatalogHint { color: #b0beb5; font-size: 11px; line-height: 1.6; }
+.modelRoutingDetails { border-top: 1px solid #333b35; padding-top: 20px; }
+.modelRoutingDetails > summary { display: flex; align-items: center; justify-content: space-between; gap: 14px; cursor: pointer; }
+.modelRoutingDetails > summary strong { display: block; font-size: 14px; font-weight: 500; }
+.modelRoutingDetails > summary span { display: block; font-size: 11px; color: #b0beb5; margin-top: 5px; }
+.modelRoutingDetails[open] > summary { margin-bottom: 20px; }
+.modelRoutingDetails[open] > summary > svg { transform: rotate(90deg); }
+.modelWorkspaceV2 :is(button, input, select, summary):focus-visible { outline: 2px solid #b5d8c0; outline-offset: 3px; }
+@media (max-width: 900px) {
+  .modelWorkspaceV2 .modelCatalogLayout { grid-template-columns: 170px minmax(0,1fr); gap: 20px; }
+}
+@media (max-width: 700px) {
+  .modelWorkspaceV2 .modelAssignments { grid-template-columns: minmax(0,1fr); }
+  .modelWorkspaceV2 .modelAssignment { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 7px 14px; padding: 15px; }
+  .modelWorkspaceV2 .modelAssignment__label { grid-column: 1/-1; }
+  .modelWorkspaceV2 .modelAssignment strong { font-size: 14px; }
+  .modelWorkspaceV2 .modelAssignment small { grid-column: 1; }
+  .modelAssignment__state { grid-column: 2; grid-row: 2/4; align-self: center; }
+  .modelWorkspaceV2 .modelCatalogLayout { display: block; }
+  .modelWorkspaceV2 .modelProviders { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); margin-bottom: 24px; }
+  .modelWorkspaceV2 .modelProviders > .modelSectionLabel, .modelWorkspaceV2 .modelProviders .modelAllConnections, .modelOtherProviders, .modelProviderEmpty { grid-column: 1/-1; }
+  .modelWorkspaceV2 .modelProviders button { width: auto; }
+  .modelWorkspaceV2 .modelProviders .modelAllConnections { margin-top: 3px; }
+  .modelWorkspaceV2 .modelCatalogToolbar { flex-wrap: wrap; }
+  .modelWorkspaceV2 .modelSearch { flex-wrap: nowrap; }
+}
+@media (max-width: 460px) {
+  .modelWorkspaceV2 .modelCatalogRow { padding: 14px; }
+  .modelRowSummary { align-items: flex-start; }
+  .modelWorkspaceV2 .modelRowActions button { max-width: 112px; }
+  .modelWorkspaceV2 .modelSearch input { font-size: 12px; }
+}

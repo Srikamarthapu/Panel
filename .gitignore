@@ -1,0 +1,17 @@
+node_modules/
+.next/
+.next-*/
+data/
+.env
+.env.*
+!.env.example
+artifacts/
+logs/
+*.log
+test-results/
+playwright-report/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+graphify-out/

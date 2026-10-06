@@ -1,0 +1,233 @@
+/* Shared tool surfaces. Scoped to tool pages so conversation controls stay independent. */
+.controlShell .tabPage {
+  --text: #f0f0ef;
+  --muted: #a0a2a4;
+  --cyan: #afc8bb;
+  --purple: #b5bcc0;
+  --green: #a9c9b8;
+  --red: #dcaaa3;
+  --yellow: #cdb999;
+  --tool-surface: #171819;
+  --tool-inset: #1d1f21;
+  --tool-border: #303235;
+  gap: 25px;
+  color: var(--text);
+}
+.controlShell .tabPage :is(.taskComposer, .column, .kanbanColumn, .missionCard, .modelCard, .modelCurrent > div, .modelFailures, .projectCard, .docCard, .scheduleCard, .memoryItem, .terminalPanel, .signalCard, .watchHead, .marketPanel, .marketRibbon, .learningCard, .agentCard, .missionStatement, .agentInspector, .activityPanel, .docListItem, .officeStage) {
+  background: var(--tool-surface);
+  border: 1px solid var(--tool-border);
+  border-radius: 12px;
+  box-shadow: none;
+  color: var(--text);
+}
+.controlShell .tabPage :is(.tabPage__head h1) { font-size: clamp(27px, 3vw, 36px); font-weight: 500; letter-spacing: -.035em; line-height: 1.2; }
+.controlShell .tabPage :is(.tabPage__head p, .composerTop span, .quietText, .columnEmpty) { color: var(--muted); font-size: 13px; line-height: 1.7; }
+.controlShell .tabPage :is(.tabPage__eyebrow, .missionStatement > span) { color: var(--muted); letter-spacing: .12em; font-size: 10px; font-weight: 500; }
+.controlShell .tabPage :is(h2, .composerTop strong) { font-weight: 500; font-size: 15px; letter-spacing: -.015em; }
+.controlShell .tabPage h3 { color: #c4c6c7; font-size: 12px; font-weight: 500; }
+.controlShell .tabPage :is(.panelTitle > span, .projectCard span, .docCard span, .scheduleCard span, .stat span, .composerForm label span, .modelCurrent span, .learningCard span, .marketRibbon span, .tickerDetailTop span, .tickerMetrics span, .agentInspector dt) { color: var(--muted); text-transform: none; font-weight: 400; letter-spacing: 0; font-size: 11px; }
+.controlShell .tabPage :is(.projectCard p, .scheduleCard p, .docCard p, .signalCard p, .agentCard p, .modelCard p, .learningCard p, .learningCard ul, .missionStatement p, .marketEmpty p, .agentInspector p) { color: #b2b5b7; font-size: 13px; line-height: 1.75; font-style: normal; }
+.controlShell .tabPage :is(.projectCard code, .scheduleCard code, .docCard code, .agentCard code, .modelTop code, .cardTopline code, .terminalTop, .learningMeta code, .agentFacts code) { color: var(--muted); font-size: 11px; font-weight: 400; }
+.controlShell .tabPage .taskComposer { margin: 0; padding: 20px 22px; gap: 18px; }
+.controlShell .tabPage .taskComposerTop { flex-direction: row; align-items: center; justify-content: space-between; }
+.controlShell .tabPage .composerTop { gap: 18px; }
+.controlShell .tabPage .composerTop > div { min-width: 0; }
+.controlShell .tabPage .composerTop .compactButton { flex-shrink: 0; }
+.controlShell .tabPage .composerForm { gap: 16px; border-top: 1px solid var(--tool-border); padding-top: 18px; }
+.controlShell .tabPage :is(.composerForm input, .composerForm textarea, .composerForm select, .docSearchRow input, .stockSearch input) { background: #202123; border: 1px solid #3b3d40; border-radius: 8px; color: var(--text); font-size: 13px; box-shadow: none; }
+.controlShell .tabPage :is(input, textarea)::placeholder { color: #909498; }
+.controlShell .tabPage :is(.composerForm input, .composerForm textarea, .composerForm select, .docSearchRow input, .stockSearch input):focus { border-color: #98afa0; box-shadow: none; outline: 2px solid #98afa050; outline-offset: 2px; }
+.controlShell .tabPage :is(.primaryButton, .buttonLink, .cardActions button, .modelActions button, .segmented button, .tabButton) { min-height: 35px; border: 1px solid #3a3d40; border-radius: 7px; padding: 8px 12px; background: #252729; color: #d4d6d7; font-size: 12px; font-weight: 500; box-shadow: none; }
+.controlShell .tabPage .primaryButton { background: #d3dfd7; color: #17221b; border-color: #d3dfd7; }
+.controlShell .tabPage .composerForm > .primaryButton { justify-self: start; }
+.controlShell .tabPage :is(.buttonLink, .cardActions button, .modelActions button, .segmented button, .tabButton):hover { background: #303335; border-color: #5a635d; color: #f0f0ef; }
+.controlShell .tabPage .primaryButton:hover { background: #e1eae4; border-color: #e1eae4; color: #17221b; }
+.controlShell .tabPage :is(.segmented button.active, .tabButton.active) { background: #29362e; border-color: #526b5a; color: #d2e0d6; box-shadow: none; }
+.controlShell .tabPage .tabButton span { color: #b4bcb7; font-size: 11px; font-weight: 400; }
+.controlShell .tabPage .segmented { margin-top: 4px; gap: 7px; }
+.controlShell .tabPage .taskColumns { gap: 14px; margin-top: 3px; }
+.controlShell .tabPage .column { padding: 13px; background: #141617; min-height: 245px; }
+.controlShell .tabPage .column h3 { margin: 1px 2px 16px; text-transform: capitalize; letter-spacing: 0; }
+.controlShell .tabPage .missionCard { padding: 14px; gap: 10px; border-radius: 9px; background: #1d2021; margin-top: 10px; }
+.controlShell .tabPage .missionCard h4 { font-size: 13px; font-weight: 500; line-height: 1.55; }
+.controlShell .tabPage .missionCard p { color: #b2b5b7; font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+.controlShell .tabPage .cardActions button { font-size: 10px; padding: 5px 8px; min-height: 29px; }
+.controlShell .tabPage :is(.chip, .chip.cyan, .chip.green, .chip.red, .chip.yellow) { padding: 4px 7px; background: #2d3132; color: #bbc5bf; border-radius: 5px; font-size: 10px; letter-spacing: 0; text-transform: none; font-weight: 500; }
+.controlShell .tabPage .chip.red { color: #dcb7b2; background: #382a29; }
+.controlShell .tabPage .chip.yellow { color: #d2bea1; background: #342f26; }
+.controlShell .tabPage :is(.empty, .marketEmpty) { border: 1px solid var(--tool-border); border-radius: 10px; color: var(--muted); background: transparent; padding: 22px; }
+.controlShell .tabPage :is(.empty strong, .marketEmpty strong) { font-size: 14px; color: #d9dcda; font-weight: 500; }
+.controlShell .tabPage :is(.empty p, .marketEmpty p) { font-size: 12px; line-height: 1.7; }
+.controlShell .tabPage .stat { border: 1px solid var(--tool-border); border-radius: 10px; background: var(--tool-surface); padding: 18px; min-height: 96px; box-shadow: none; }
+.controlShell .tabPage .stat strong { color: #e4e7e4; font-size: 28px; font-weight: 450; letter-spacing: -.04em; }
+.controlShell .tabPage .stat.red strong { color: #dab0ab; }
+.controlShell .tabPage .stat.green strong { color: #b8d1c1; }
+.controlShell .tabPage :is(.projectCard, .scheduleCard, .modelCard, .learningCard, .docCard) { padding: 22px; }
+.controlShell .tabPage :is(.projectMeta span, .scheduleMeta span, .learningMeta code, .agentFacts code, .tagRow span, .cronBrief) { border-color: #36393b; background: #202324; color: #aeb5b0; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.controlShell .tabPage :is(.modelCard.primary, .modelCard.fallback) { border-color: #52675a; }
+.controlShell .tabPage .modelCurrent > div { padding: 20px; gap: 10px; }
+.controlShell .tabPage .modelCurrent strong { font-size: 17px; font-weight: 500; }
+.controlShell .tabPage :is(.modelCurrent p, .modelDetail) { font-size: 12px; line-height: 1.6; color: var(--muted); }
+.controlShell .tabPage .modelCurrent > button { justify-self: start; }
+.controlShell .tabPage .modelGrid { gap: 15px; }
+.controlShell .tabPage .modelTop { flex-wrap: wrap; }
+.controlShell .tabPage .modelBadges { max-width: 100%; justify-content: flex-start; }
+.controlShell .tabPage :is(.modelBadges > span:first-child, .healthPill) { min-height: 24px; padding: 4px 7px; border: 1px solid #3b4140; border-radius: 5px; color: #b4bcb7; text-transform: none; font-size: 10px; font-weight: 400; }
+.controlShell .tabPage .healthPill.ok { color: #b8d1c1; border-color: #425c4d; }
+.controlShell .tabPage .healthPill.bad { color: #d8aea8; border-color: #614642; }
+.controlShell .tabPage :is(.memoryItem.active, .docListItem.active) { background: #222c26; border-color: #536d5b; box-shadow: none; }
+.controlShell .tabPage .docListItem:hover { border-color: #617568; background: #1d2420; }
+.controlShell .tabPage :is(.terminalPanel pre, .modelFailures pre) { color: #c1c6c2; font-size: 12px; line-height: 1.8; background: #141617; }
+.controlShell .tabPage .terminalTop { padding: 14px 18px; background: #1c1f20; border-color: var(--tool-border); }
+.controlShell .tabPage .docListItem { padding: 15px; gap: 7px; }
+.controlShell .tabPage .docListItem strong { font-size: 12px; font-weight: 500; }
+.controlShell .tabPage .docListItem small { font-size: 10px; }
+.controlShell .tabPage .docSearchRow { margin-bottom: 5px; }
+.controlShell .tabPage .missionStatement { padding: 22px; margin: 0; }
+.controlShell .tabPage .missionStatement > span { margin-bottom: 10px; }
+.controlShell .tabPage .missionStatement p { margin: 0; max-width: 70ch; }
+.controlShell .tabPage .activityPanel { display: grid; gap: 13px; padding: 22px; }
+.controlShell .tabPage :is(.activityRow, .portfolioRow, .tickerDetail, .tickerMetrics > div, .quoteTile, .marketResults button, .latestDecision, .decisionList article) { border: 1px solid #323638; border-radius: 8px; background: #1c2021; box-shadow: none; }
+.controlShell .tabPage .activityRow { padding: 13px; }
+.controlShell .tabPage .activityRow strong { font-size: 12px; font-weight: 500; }
+.controlShell .tabPage .activityRow code { color: #a4aaa6; font-size: 11px; overflow-wrap: anywhere; }
+.controlShell .tabPage .agentCard { padding: 22px; }
+.controlShell .tabPage .agentCard h2 { margin-bottom: 6px; }
+.controlShell .tabPage .pixel { background: #a9bfb1; box-shadow: none; border: 1px solid #768d7f; border-radius: 10px; }
+.controlShell .tabPage .pixel.offline { background: #535b57; border-color: #68706b; }
+.controlShell .tabPage .officeStage { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); align-content: start; gap: 18px; padding: 24px; min-height: 410px; }
+.controlShell .tabPage .officeGridLines { display: none; }
+.controlShell .tabPage :is(.officeAgent, .officeAgent.hermes, .officeAgent.worker) { position: relative; inset: auto; width: 100%; height: 245px; border-color: #3b4640; background: #1e2521; border-radius: 10px; box-shadow: none; }
+.controlShell .tabPage .officeAgent.selected { border-color: #a0b6a6; transform: none; background: #27352c; }
+.controlShell .tabPage .officeAgent.offline { opacity: .7; }
+.controlShell .tabPage .officeAgent strong { font-size: 18px; font-weight: 500; }
+.controlShell .tabPage .officeAgent em { color: #a4b2a8; font-size: 11px; }
+.controlShell .tabPage .deskSurface { background: #56665c; }
+.controlShell .tabPage .monitorSet { left: 17%; width: 66%; gap: 8px; }
+.controlShell .tabPage .monitorSet i { width: 50%; background: #2c3b31; border-color: #6d8676; }
+.controlShell .tabPage .agentSprite { color: #a8c0b0; }
+.controlShell .tabPage .agentInspector { padding: 22px; }
+.controlShell .tabPage .agentInspector dd { color: #d1d8d3; font-size: 12px; overflow-wrap: anywhere; }
+.controlShell .tabPage .ticker { color: #a8b6ad; background: #222d26; border-color: #43574a; }
+.controlShell .tabPage .marketRibbon { padding: 22px; }
+.controlShell .tabPage .marketRibbon strong { color: #e0e5e1; font-size: 17px; font-weight: 500; }
+.controlShell .tabPage .marketPanel { padding: 22px; gap: 18px; }
+.controlShell .tabPage .allocationMeter { background: #252b28; border-color: #3d4941; height: 6px; }
+.controlShell .tabPage .allocationMeter span { background: #9ab9a5; }
+.controlShell .tabPage :is(.portfolioRow span, .portfolioRow em, .marketResults span, .quoteTile span, .quoteTile small) { color: #aeb8b1; }
+.controlShell .tabPage :is(.marketResults button:hover, .quoteTile:hover) { border-color: #809787; background: #252e28; transform: none; }
+.controlShell .tabPage .quoteTile { min-height: 120px; }
+.controlShell .tabPage .quoteTile strong { font-weight: 500; }
+.controlShell .tabPage .quoteTile span { font-weight: 500; }
+.controlShell .tabPage .tickerMetrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.controlShell .tabPage .tickerMetrics strong { color: #d4ddd7; font-size: 12px; }
+.controlShell .tabPage .up { color: #b1d2bd; }
+.controlShell .tabPage .down { color: #d8aaa3; }
+.controlShell .tabPage .flat { color: #b9c1bc; }
+.controlShell .tabPage :is(.dataNotice, .composerStatus) { font-size: 12px; line-height: 1.65; }
+.controlShell .tabPage .dataNotice { color: #cdb999; }
+.controlShell .tabPage .composerStatus.ok { color: #afc8bb; }
+.controlShell .tabPage .composerStatus.error { color: #dcaaa3; }
+.controlShell .tabPage .scheduleError { color: #dcaaa3 !important; border-color: #684944; background: #2e2422; }
+.controlShell .tabPage :is(button, a, input, textarea, select):focus-visible { outline: 2px solid #b3cebd; outline-offset: 3px; }
+@media (max-width: 1120px) {
+  .controlShell .tabPage .taskColumns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .controlShell .tabPage :is(.marketGrid, .marketSplit, .visualShell) { grid-template-columns: minmax(0, 1fr); }
+  .controlShell .tabPage .activityRow { grid-template-columns: minmax(0, 1fr) auto; }
+  .controlShell .tabPage .activityRow code { grid-column: 1 / -1; }
+}
+@media (max-width: 700px) {
+  .controlShell .tabPage :is(.docsSplit, .split, .modelCurrent, .crewGrid, .crewGrid.compact, .marketRibbon) { grid-template-columns: minmax(0, 1fr); }
+  .controlShell .tabPage .heroGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .controlShell .tabPage .docsSplit .docList { max-height: 260px; overflow-y: auto; }
+  .controlShell .tabPage .taskComposerTop { align-items: flex-start; }
+  .controlShell .tabPage .composerTop { flex-wrap: wrap; }
+  .controlShell .tabPage :is(.taskComposer, .modelCard, .projectCard, .scheduleCard, .marketPanel) { padding: 17px; }
+  .controlShell .tabPage .modelGrid { grid-template-columns: minmax(0, 1fr); }
+  .controlShell .tabPage .officeStage { padding: 16px; }
+}
+@media (max-width: 440px) {
+  .controlShell .tabPage .taskColumns { grid-template-columns: minmax(0, 1fr); }
+  .controlShell .tabPage .formGrid { grid-template-columns: minmax(0, 1fr); }
+  .controlShell .tabPage .portfolioRow { grid-template-columns: minmax(0, 1fr) auto; }
+  .controlShell .tabPage .portfolioRow > em { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .controlShell .tabPage .officeAgent.online .agentSprite { animation: none; }
+}
+
+/* Model browser: configuration and provider catalogs share one selection flow. */
+.modelWorkspace { display: grid; gap: 24px; min-width: 0; }
+.modelAssignments { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.modelAssignment { display: grid; gap: 10px; min-width: 0; padding: 18px; border: 1px solid #34383a; border-radius: 12px; background: #191c1d; color: #d8deda; text-align: left; }
+.modelAssignment[aria-pressed="true"] { background: #25342a; border-color: #698572; }
+.modelAssignment > span { color: #b2c1b6; font-size: 11px; }
+.modelAssignment strong { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; line-height: 1.5; }
+.modelAssignment small { font-size: 11px; color: #9fabA3; line-height: 1.5; }
+.modelCatalogToolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.modelCatalogToolbar h2 { margin: 0 0 7px; }
+.modelCatalogToolbar p { margin: 0; color: #a0aaa3; font-size: 12px; line-height: 1.6; }
+.modelCatalogToolbar .buttonLink { flex-shrink: 0; }
+.modelCatalogLayout { display: grid; grid-template-columns: 195px minmax(0, 1fr); gap: 22px; align-items: start; }
+.modelProviders { display: flex; flex-direction: column; gap: 5px; max-height: 660px; overflow-y: auto; scrollbar-width: thin; }
+.modelProviders button { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-width: 0; min-height: 42px; padding: 11px 12px; text-align: left; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #b9c2bc; font-size: 12px; }
+.modelProviders button > span { overflow-wrap: anywhere; }
+.modelProviders button[aria-pressed="true"] { background: #25312a; border-color: #435e4c; color: #deebe2; }
+.modelProviders button:hover { background: #252c28; }
+.modelProviders em { display: block; margin-top: 6px; color: #9ca9a0; font-size: 10px; line-height: 1.5; font-style: normal; }
+.modelProviders small { flex-shrink: 0; color: #a3b0a7; font-size: 10px; }
+.modelProviders__divider { height: 1px; margin: 10px; background: #303835; }
+.modelCatalogResults { display: grid; gap: 12px; min-width: 0; }
+.modelSearch { display: flex; align-items: center; gap: 13px; }
+.modelSearch input { flex: 1; min-width: 0; min-height: 42px; padding: 10px 13px; background: #202524; border: 1px solid #3a4640; border-radius: 8px; color: #e4eae6; font-size: 13px; }
+.modelSearch > span { color: #acb8b0; font-size: 11px; flex-shrink: 0; }
+.modelCatalogList { display: grid; border: 1px solid #343d38; border-radius: 12px; overflow: hidden; }
+.modelCatalogRow { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 15px 17px; min-width: 0; background: #191e1b; border-bottom: 1px solid #303a34; }
+.modelCatalogRow:last-child { border-bottom: 0; }
+.modelCatalogRow[data-selected="true"] { background: #25362b; }
+.modelCatalogRow > div { min-width: 0; }
+.modelCatalogRow strong { display: block; color: #dce5df; font-size: 13px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
+.modelCatalogRow code { display: block; color: #a1aea5; font-size: 10px; margin-top: 4px; overflow-wrap: anywhere; }
+.modelCatalogRow p { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; color: #a9b4ad; font-size: 10px; line-height: 1.5; }
+.modelCatalogRow .modelNeedsSetup { color: #ccb799; }
+.modelWorkspace :is(.modelCatalogRow, .modelDefaultRow, .modelCustom, .modelNotice) button { border: 1px solid #4a5b50; border-radius: 7px; background: #2a372e; color: #d0e1d5; font-size: 11px; padding: 8px 11px; min-height: 35px; }
+.modelCatalogRow > button { flex-shrink: 0; }
+.modelWorkspace :is(.modelCatalogRow, .modelDefaultRow, .modelCustom) button:not(:disabled):hover { background: #354b3d; border-color: #7a9883; }
+.modelCatalogRow[data-selected="true"] > button:disabled { opacity: 1; border-color: #4e6757; background: #304536; color: #bddec9; }
+.modelCatalogHint { margin: 0; color: #a5b2a9; font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.modelCatalogEmpty { display: grid; gap: 8px; padding: 24px; border: 1px solid #3a453e; border-radius: 10px; color: #aab7ae; font-size: 13px; line-height: 1.6; }
+.modelCatalogEmpty strong { color: #dae4dd; font-weight: 500; }
+.modelCatalogEmpty p { margin: 0; }
+.modelLoadMore { border: 1px solid #3e4b43; border-radius: 8px; background: #202a24; color: #bbcec1; padding: 12px; font-size: 12px; }
+.modelDefaultRow { display: flex; gap: 15px; justify-content: space-between; align-items: center; padding: 16px; border: 1px solid #4b6253; border-radius: 10px; background: #202f25; }
+.modelDefaultRow strong { display: block; color: #d8e8dd; font-size: 12px; font-weight: 500; }
+.modelDefaultRow span { display: block; margin-top: 6px; color: #a8bbaf; font-size: 11px; }
+.modelDefaultRow button { flex-shrink: 0; }
+.modelNotice { display: flex; align-items: center; gap: 14px; margin: 0; padding: 14px 16px; border: 1px solid #51685a; border-radius: 9px; background: #223128; color: #c4dfce; font-size: 12px; line-height: 1.6; }
+.modelNotice.is-error { background: #352722; border-color: #745048; color: #e4c1b5; }
+.modelNotice.is-warning { border-color: #746645; background: #302d22; color: #dfd1a8; }
+.modelNotice span { flex: 1; }
+.modelCustom { border: 1px solid #3a453e; border-radius: 10px; overflow: hidden; background: #1a211c; }
+.modelCustom > summary { padding: 17px 20px; color: #c7d6cb; font-size: 13px; cursor: pointer; }
+.modelCustom form { display: grid; grid-template-columns: minmax(130px, .8fr) minmax(0, 1.2fr) auto; align-items: end; gap: 14px; padding: 20px; border-top: 1px solid #3a453e; }
+.modelCustom form > p { grid-column: 1 / -1; margin: 0; color: #a8b8ad; font-size: 12px; line-height: 1.6; }
+.modelCustom label { display: grid; gap: 8px; min-width: 0; color: #b6c7bc; font-size: 11px; }
+.modelCustom :is(input, select) { width: 100%; min-width: 0; height: 38px; padding: 8px 10px; border: 1px solid #45594b; border-radius: 7px; background: #26382c; color: #d9e8de; font-size: 12px; }
+@media (max-width: 800px) {
+  .modelAssignments { grid-template-columns: minmax(0, 1fr); }
+  .modelAssignment { grid-template-columns: 80px minmax(0, 1fr); align-items: center; padding: 14px 16px; }
+  .modelAssignment small { grid-column: 2; }
+  .modelCatalogLayout { grid-template-columns: minmax(0, 1fr); }
+  .modelProviders { display: flex; flex-direction: row; max-height: none; overflow-x: auto; }
+  .modelProviders button { flex: 0 0 150px; align-items: flex-start; }
+  .modelProviders__divider { display: none; }
+  .modelCustom form { grid-template-columns: minmax(0, 1fr); }
+  .modelCustom form > button { justify-self: start; }
+}
+@media (max-width: 460px) {
+  .modelCatalogRow { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .modelCatalogRow > button { align-self: flex-end; }
+  .modelDefaultRow { align-items: flex-start; flex-direction: column; }
+  .modelSearch { flex-wrap: wrap; }
+  .modelSearch input { flex-basis: 100%; }
+}

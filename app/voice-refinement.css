@@ -1,0 +1,156 @@
+/* Voice preferences share the workspace's quiet, neutral material palette. */
+.voiceSettings {
+  --voice-border: #303235;
+  --voice-text: #f0f0ef;
+  --voice-muted: #a0a2a4;
+  --voice-accent: #a9c9b8;
+  width: min(100%, 1056px);
+  margin: 0 auto;
+  gap: 32px;
+  color: var(--voice-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.voiceSettings__head { align-items: center; gap: 20px; }
+.voiceSettings__eyebrow { color: var(--voice-muted); font-size: 11px; letter-spacing: .12em; }
+.voiceSettings__head h1 { margin: 10px 0 0; font-size: clamp(27px, 3vw, 36px); line-height: 1.2; font-weight: 550; letter-spacing: -.035em; }
+.voiceSettings__head p { margin: 10px 0 0; color: var(--voice-muted); font-size: 14px; line-height: 1.5; }
+.voiceSettings__back { display: inline-flex; align-items: center; gap: 12px; color: #c4c6c7; text-decoration: none; font-size: 12px; padding: 10px 0; }
+.voiceSettings__connection { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding: 15px 18px; border: 1px solid var(--voice-border); background: #171819; border-radius: 12px; }
+.voiceSettings__connection > span { color: var(--voice-muted); font-size: 12px; line-height: 1.5; }
+.voiceSettings__server { gap: 9px; padding: 0; border: 0; border-radius: 0; background: none; font-size: 12px; color: var(--voice-text); }
+.voiceSettings__server strong { font-weight: 500; }
+.voiceSettings__dot { width: 6px; height: 6px; flex: 0 0 6px; background: #898c90; }
+.voiceSettings__dot[data-state="running"] { background: var(--voice-accent); box-shadow: none; }
+.voiceSettings__dot[data-state="stopped"], .voiceSettings__dot[data-state="error"] { background: #d6aa8e; box-shadow: none; }
+.voiceSettings__layout { display: grid; grid-template-columns: 196px minmax(0, 1fr); column-gap: 32px; row-gap: 36px; }
+.voiceSettings__sectionIntro { padding-top: 5px; }
+.voiceSettings__sectionIntro > span { color: #85888a; font-size: 10px; font-variant-numeric: tabular-nums; }
+.voiceSettings__sectionIntro h2 { color: var(--voice-text); margin: 10px 0; font-size: 16px; letter-spacing: -.02em; font-weight: 500; }
+.voiceSettings__sectionIntro p { max-width: 23ch; color: var(--voice-muted); margin: 0; font-size: 12px; line-height: 1.7; }
+.voiceSettings__card { padding: 24px; gap: 22px; border: 1px solid var(--voice-border); border-radius: 12px; background: #171819; box-shadow: none; min-width: 0; }
+.voiceSettings__advanced { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.voiceSettings__disclosure { border: 1px solid var(--voice-border); border-radius: 12px; background: #171819; min-width: 0; overflow: hidden; }
+.voiceSettings__disclosure summary { list-style: none; display: flex; align-items: center; gap: 12px; padding: 19px 22px; cursor: pointer; }
+.voiceSettings__disclosure summary::-webkit-details-marker { display: none; }
+.voiceSettings__disclosure summary > span:first-child { flex: 1; display: grid; gap: 6px; }
+.voiceSettings__disclosure summary strong { font-size: 13px; font-weight: 500; color: var(--voice-text); }
+.voiceSettings__disclosure summary > span:first-child > span { font-size: 12px; line-height: 1.5; color: var(--voice-muted); }
+.voiceSettings__count { font-size: 11px; color: var(--voice-muted); }
+.voiceSettings__chevron { font-size: 16px; color: var(--voice-muted); transition: transform 150ms ease; }
+.voiceSettings__disclosure[open] .voiceSettings__chevron { transform: rotate(180deg); }
+.voiceSettings__disclosure[open] summary { border-bottom: 1px solid #292b2e; }
+.voiceSettings__disclosureBody { padding: 22px; }
+.voiceSettings__row { display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: 18px; }
+.voiceSettings__row > span { color: #c5c7c8; font-size: 12px; }
+.voiceSettings__row small { display: block; margin-top: 6px; font-size: 11px; color: var(--voice-muted); }
+.voiceSettings__row input, .voiceSettings__row select { width: min(100%, 230px); min-width: 0; border: 1px solid #36383b; border-radius: 7px; padding: 9px 11px; font-family: inherit; color: var(--voice-text); background: #202123; font-size: 12px; }
+.voiceSettings__language { border-top: 1px solid #2b2d30; padding-top: 20px; }
+.voiceSettings__language input { width: 86px; }
+.voiceSettings__button, .voiceSettings__quick .dockSettings__toggle { padding: 8px 12px; border: 1px solid #3a3c3f; background: #252629; color: #e1e2e2; font-family: inherit; font-size: 12px; border-radius: 7px; cursor: pointer; line-height: 1.4; }
+.voiceSettings__button:hover, .voiceSettings__quick .dockSettings__toggle:hover { background: #303235; }
+.voiceSettings__button:disabled { opacity: .55; cursor: progress; }
+.voiceSettings__inlineError { padding: 12px; border: 1px solid #584638; border-radius: 8px; background: #25221f; color: #e2bbaa; margin: 0; font-size: 12px; line-height: 1.6; }
+.voiceSettings__help, .voiceSettings__empty { margin: 0; font-size: 12px; line-height: 1.7; color: var(--voice-muted); }
+.voiceSettings__fallback, .voiceSettings__diagnostics { display: grid; gap: 18px; }
+.voiceSettings__diagnostics > button { justify-self: start; }
+.voiceSettings__diagnosticList { margin: 0; display: grid; gap: 14px; font-size: 12px; }
+.voiceSettings__diagnosticList > div { display: grid; grid-template-columns: 118px 1fr; gap: 12px; }
+.voiceSettings__diagnosticList dt { color: #c5c7c8; }
+.voiceSettings__diagnosticList dd { margin: 0; color: var(--voice-muted); line-height: 1.6; }
+.voiceSettings__history { max-height: 360px; overflow: auto; }
+.voiceSettings__history ul { gap: 16px; }
+.voiceSettings__history li { padding: 0 0 14px; border: 0; border-radius: 0; border-bottom: 1px solid #303235; background: none; gap: 8px; }
+.voiceSettings__history li[data-role="user"], .voiceSettings__history li[data-role="hermes"] { border-left: 0; }
+.voiceSettings__history li > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.voiceSettings__history strong { color: #d0d2d3; letter-spacing: 0; text-transform: none; font-size: 12px; font-weight: 500; }
+.voiceSettings__history p { font-size: 12px; line-height: 1.7; color: var(--voice-muted); overflow-wrap: anywhere; }
+.voiceSettings__history time { font-size: 10px; color: var(--voice-muted); }
+.voiceSettings__history li[data-error="true"] p { color: #e2bbaa; }
+.voiceSettings__quick { --voice-meter-track: #252629; --voice-meter-level: #a9c9b8; width: 100%; color: #f0f0ef; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.voiceSettings__quick .dockSettings { width: 100%; display: grid; gap: 18px; margin: 0; padding: 20px; border: 1px solid #303235; border-radius: 12px; background: #171819; backdrop-filter: none; box-shadow: none; text-align: left; }
+.voiceSettings__quick--embedded .dockSettings { padding: 0; border: 0; border-radius: 0; background: none; }
+.voiceSettings__quick .dockSettings__row { margin: 0; gap: 18px; }
+.voiceSettings__quick .dockSettings__modelRow { grid-template-columns: minmax(0, 1fr) minmax(0, .7fr); }
+.voiceSettings__quick .dockSettings__row--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.voiceSettings__quick .dockSettings__field { gap: 8px; min-width: 0; font-size: 12px; color: #c5c7c8; }
+.voiceSettings__quick .dockSettings__field select { width: 100%; max-width: 100%; min-width: 0; border: 1px solid #36383b; border-radius: 7px; padding: 9px 11px; background: #202123; color: #f0f0ef; font-size: 12px; font-family: inherit; text-overflow: ellipsis; }
+.voiceSettings__quick .dockSettings__field select:disabled { opacity: .6; }
+.voiceSettings__quick .dockSettings__toggles { display: grid; grid-template-columns: 1fr; gap: 0; border-top: 1px solid #2b2d30; }
+.voiceSettings__quick .dockSettings__toggleField { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 13px 0; border: 0; border-bottom: 1px solid #2b2d30; border-radius: 0; color: #c5c7c8; background: none; font-size: 12px; }
+.voiceSettings__quick .dockSettings__toggle { min-width: 48px; padding: 5px 10px; }
+.voiceSettings__quick .dockSettings__toggle.is-on { color: #bed8ca; background: #25332d; border-color: #425e50; }
+.voiceSettings__quick .dockSettings__meterRow { gap: 14px; }
+.voiceSettings__quick .dockSettings__meter { flex: 1; width: 100%; height: 5px; background: #252629; border-radius: 4px; }
+.voiceSettings__quick .dockSettings__meterLabel { font-size: 11px; color: #a0a2a4; }
+.voiceSettings__quick .dockSettings__moreLink { display: flex; justify-content: space-between; color: #c8cdca; font-size: 12px; text-decoration: none; }
+.voiceSettings__quick .dockSettings__moreLink:hover { color: #f0f0ef; }
+.voiceSettings :is(button, input, select, summary, a):focus-visible, .voiceSettings__quick :is(button, select, a):focus-visible { outline: 2px solid #a9c9b8; outline-offset: 4px; }
+.elevenKeys { color: #f0f0ef; min-width: 0; }
+.elevenKeys__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.elevenKeys__head h3 { margin: 0; font-size: 13px; font-weight: 500; }
+.elevenKeys__meta { color: #a0a2a4; margin: 6px 0 0; font-size: 11px; line-height: 1.5; }
+.elevenKeys__refresh, .elevenKeys__btn { padding: 7px 11px; border: 1px solid #3a3c3f; border-radius: 7px; background: #252629; color: #e1e2e2; font-size: 11px; font-family: inherit; white-space: nowrap; cursor: pointer; }
+.elevenKeys__refresh:hover, .elevenKeys__btn:hover { background: #303235; }
+.elevenKeys__refresh:disabled, .elevenKeys__btn:disabled { opacity: .5; cursor: default; }
+.elevenKeys__error { margin: 0 0 16px; padding: 12px; font-size: 12px; line-height: 1.6; color: #e2bbaa; background: #25221f; border: 1px solid #584638; border-radius: 8px; }
+.elevenKeys__empty { border: 0; border-radius: 0; background: none; margin: 0 0 12px; padding: 0; color: #a0a2a4; font-size: 12px; line-height: 1.7; }
+.elevenKeys__list { display: flex; flex-direction: column; gap: 0; list-style: none; padding: 0; margin: 0; }
+.elevenKeys__row { display: grid; grid-template-columns: minmax(125px, 1fr) minmax(100px, 1.1fr) auto; align-items: center; column-gap: 20px; row-gap: 10px; padding: 16px 0; border: 0; border-top: 1px solid #303235; border-radius: 0; background: none; }
+.elevenKeys__row.is-active, .elevenKeys__row[data-tone="warn"], .elevenKeys__row[data-tone="bad"] { background: none; border-color: #303235; opacity: 1; }
+.elevenKeys__identity { display: grid; gap: 7px; }
+.elevenKeys__rowHead { display: flex; flex-wrap: wrap; gap: 7px; }
+.elevenKeys__keyMask { font-size: 11px; color: #dddede; font-weight: 400; }
+.elevenKeys__activeBadge { padding: 0; border: 0; color: #a9c9b8; font-size: 9px; letter-spacing: 0; text-transform: none; }
+.elevenKeys__status { width: fit-content; padding: 0; border: 0; border-radius: 0; font-size: 10px; }
+.elevenKeys__status--ok { color: #a0a2a4; }
+.elevenKeys__status--warn { color: #d1b295; }
+.elevenKeys__status--bad { color: #d7aaa2; }
+.elevenKeys__stats { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; color: #c1c3c4; font-size: 10px; }
+.elevenKeys__stats small { margin: 0; color: #a0a2a4; font-size: 9px; }
+.elevenKeys__bar { height: 3px; background: #303235; margin-top: 8px; border-radius: 3px; overflow: hidden; }
+.elevenKeys__barFill, .elevenKeys__row[data-tone="warn"] .elevenKeys__barFill, .elevenKeys__row[data-tone="bad"] .elevenKeys__barFill { display: block; height: 100%; border-radius: inherit; background: #8c9e93; }
+.elevenKeys__rowActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.elevenKeys__note { grid-column: 1 / -1; margin: 0; color: #a0a2a4; font-size: 10px; line-height: 1.6; }
+.elevenKeys__footnote { margin: 14px 0 0; font-size: 10px; color: #a0a2a4; }
+.elevenKeys :is(button, a):focus-visible { outline: 2px solid #a9c9b8; outline-offset: 4px; }
+@media (max-width: 960px) {
+  .voiceSettings__layout { grid-template-columns: 150px minmax(0, 1fr); gap: 28px 24px; }
+  .elevenKeys__row { grid-template-columns: minmax(0, 1fr) auto; }
+  .elevenKeys__usage { grid-column: 1; grid-row: 2; }
+  .elevenKeys__rowActions { grid-column: 2; grid-row: 1 / 3; }
+}
+@media (max-width: 700px) {
+  .voiceSettings { gap: 24px; }
+  .voiceSettings__layout { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .voiceSettings__sectionIntro { padding-top: 10px; }
+  .voiceSettings__sectionIntro > span { float: left; margin: 3px 10px 0 0; }
+  .voiceSettings__sectionIntro h2 { margin: 0 0 7px; }
+  .voiceSettings__sectionIntro p { max-width: none; }
+  .voiceSettings__card { padding: 18px; }
+  .voiceSettings__connection { gap: 10px; }
+  .voiceSettings__disclosure summary { padding: 17px; }
+  .voiceSettings__disclosureBody { padding: 17px; }
+}
+@media (max-width: 420px) {
+  .voiceSettings__quick .dockSettings__modelRow, .voiceSettings__quick .dockSettings__row--two { grid-template-columns: minmax(0, 1fr); }
+  .voiceSettings__row { align-items: flex-start; }
+  .voiceSettings__fallback .voiceSettings__row { flex-direction: column; gap: 9px; }
+  .voiceSettings__fallback .voiceSettings__row :is(input, select) { width: 100%; }
+  .voiceSettings__quick .dockSettings__meterRow { flex-wrap: wrap; }
+  .voiceSettings__diagnosticList > div { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voiceSettings__chevron { transition: none; }
+}
+
+.voiceSettings__saveStatus { margin: 0; font-size: 11px; line-height: 1.5; color: #a9c9b8; }
+.voiceSettings__saveStatus.is-error { color: #e2bbaa; }
+
+.voiceSettings__modelPicker { display: grid; gap: 10px; min-width: 0; }
+.voiceSettings__modelSearch, .voiceSettings__customModel > label { display: block; min-width: 0; }
+.voiceSettings__modelPicker :is(input, select) { width: 100%; min-width: 0; min-height: 36px; background: #202524; border: 1px solid #3c4941; border-radius: 7px; padding: 8px 10px; color: #dce6df; font-size: 12px; }
+.voiceSettings__modelLinks { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.voiceSettings__modelLinks :is(button, a) { border: 0; padding: 2px 0; border-radius: 0; background: transparent; color: #afc4b6; font-size: 10px; text-decoration: none; }
+.voiceSettings__modelLinks :is(button, a):hover { color: #e0efe5; }
+.voiceSettings__customModel { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.voiceSettings__modelPicker .voiceSettings__help { font-size: 11px; }

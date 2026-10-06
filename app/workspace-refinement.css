@@ -1,0 +1,159 @@
+/* Conversation-first workspace. Existing palette and appearance preferences remain owners. */
+.controlShell[data-route=chat] .workspaceFrame { grid-template-rows:48px minmax(0,1fr); }
+.controlShell[data-route=chat] .workspaceHeader { height:48px; padding-inline:26px; }
+.controlShell[data-route=chat] .stage { padding:0; min-height:0; }
+.chatWorkspace { display:grid; grid-template-columns:minmax(0,1fr); width:100%; max-width:none; }
+.chatWorkspace[data-agents-open] { grid-template-columns:minmax(0,1fr) 288px; }
+.chatWorkspace .conversationHeader { padding:12px 26px; min-height:78px; gap:16px; }
+.conversationIdentity { min-width:0; }
+.conversationIdentity>p { font-size:11px; color:var(--fg-2); margin:3px 0 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.conversationHeading { gap:12px; flex:1; }
+.conversationPresence,.conversationPresence .mcOrb { width:32px; height:32px; }
+.sessionPicker { position:relative; display:flex; align-items:center; max-width:360px; }
+.sessionPicker select { appearance:none; width:100%; min-width:80px; max-width:360px; padding:4px 24px 4px 0; background:transparent; color:var(--fg-1); border:0; border-radius:4px; font:inherit; font-size:15px; font-weight:500; text-overflow:ellipsis; cursor:pointer; }
+.sessionPicker select option { background:var(--panel); color:var(--fg-1); }
+.sessionPicker>svg { position:absolute; right:4px; pointer-events:none; color:var(--fg-2); }
+.conversationActions { display:flex; align-items:center; gap:4px; flex-shrink:0; }
+.iconButton { display:inline-flex; justify-content:center; align-items:center; width:36px; min-width:36px; height:36px; padding:0; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--fg-2); cursor:pointer; }
+.iconButton:hover { background:var(--bg-2); color:var(--fg-1); }
+.iconButton:disabled { opacity:.45; cursor:not-allowed; }
+.iconButton[aria-pressed=true] { color:var(--accent); background:var(--accent-soft); }
+:is(.iconButton,.agentsToggle,.agentsPane__new,.sessionPicker select,.sessionDialog input):focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.chatWorkspace .chatVoiceLink { padding:0; border:0; min-height:36px; }
+.agentsToggle { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:36px; margin-left:8px; padding:0 11px; border:1px solid var(--line); border-radius:8px; color:var(--fg-2); background:transparent; font:inherit; font-size:12px; cursor:pointer; }
+.agentsToggle:hover,.agentsToggle[aria-expanded=true] { background:var(--accent-soft); color:var(--accent); border-color:var(--line-hot); }
+.agentsToggle b { font-size:10px; font-weight:500; border-radius:4px; padding:1px 4px; color:var(--bg-0); background:var(--accent); }
+.conversationHistory__inner { padding:26px clamp(20px,4vw,48px) 22px; }
+.chatWorkspace .conversationMessage { max-width:760px; margin-bottom:28px; }
+.chatWorkspace .conversationMessage header { display:flex; align-items:center; min-height:28px; gap:9px; }
+.chatWorkspace .conversationMessage header strong { font-size:11px; color:var(--fg-2); font-weight:500; }
+.chatWorkspace .messageCopy { margin:0 0 0 auto; padding:4px 6px; min-height:28px; font-size:10px; color:var(--fg-2); }
+.chatWorkspace .messageCopy>span { max-width:0; overflow:hidden; }
+.chatWorkspace .messageCopy:hover>span,.chatWorkspace .messageCopy:focus-visible>span { max-width:none; }
+.chatWorkspace .conversationMessage p { font-size:15px; line-height:1.7; margin:7px 0 12px; }
+.chatWorkspace .conversationMessage[data-role=user] { max-width:760px; }
+.chatWorkspace .conversationMessage .messageUserText { display:table; max-width:100%; background:var(--panel-2); border:1px solid var(--line); border-radius:12px; padding:11px 15px; margin:4px 0 0; }
+.chatWorkspace .conversationMessage[data-role=user] header { color:var(--fg-2); }
+.chatWorkspace .messageContent { color:var(--fg-1); }
+.chatWorkspace .conversationBottom { padding:10px clamp(20px,4vw,48px) 13px; border-top:0; }
+.chatWorkspace .messageComposer { max-width:760px; margin:auto; border-radius:14px; padding:13px 15px 9px; background:var(--panel); border:1px solid var(--line-hot); }
+.chatWorkspace .messageComposer textarea { min-height:40px; max-height:180px; font-size:15px; line-height:1.6; }
+.chatWorkspace .messageComposer__footer { padding-top:3px; }
+.chatWorkspace .messageComposer__footer>a { font-size:10px; color:var(--fg-2); }
+.chatWorkspace .composerHint { font-size:10px; color:var(--fg-2); }
+.chatWorkspace .sendMessage { width:34px; height:34px; min-width:34px; border-radius:9px; }
+.chatWorkspace .conversationFooter { max-width:760px; margin:7px auto 0; color:var(--fg-2); }
+.chatWorkspace__empty { padding:25px 10px; }
+.chatWorkspace__presence,.chatWorkspace__presence .mcOrb[data-size=hero] { width:96px; height:96px; }
+.chatWorkspace__empty h2 { font-size:27px; letter-spacing:-.7px; margin-top:18px; }
+.chatWorkspace__empty p { font-size:13px; color:var(--fg-2); }
+.thinkingDetails { margin-block:8px 18px; }
+.thinkingDetails summary { padding-inline:0; }
+.thinkingDetails>div { border-color:var(--line); }
+
+/* Only visible when the user asks to work with more than one agent. */
+.agentsPane { box-sizing:border-box; display:flex; flex-direction:column; min-width:0; min-height:0; overflow:auto; padding:22px 18px 18px; border:0; border-left:1px solid var(--line); background:var(--bg-1); color:var(--fg-1); animation:agent-pane-enter 150ms ease-out; }
+.agentsPane>header { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:22px; }
+.agentsPane h2 { font-size:15px; font-weight:500; margin:0 0 7px; letter-spacing:-.2px; }
+.agentsPane header p { font-size:10px; color:var(--fg-2); margin:0; }
+.agentsPane__new { min-height:38px; display:flex; align-items:center; justify-content:center; gap:8px; background:transparent; border:1px solid var(--line-hot); border-radius:8px; color:var(--fg-1); font:inherit; font-size:12px; cursor:pointer; margin-bottom:18px; }
+.agentsPane__new:hover { background:var(--bg-2); }
+.agentsPane__new:disabled { opacity:.5; cursor:not-allowed; }
+.agentsPane__list { display:flex; flex-direction:column; gap:12px; }
+.agentsPaneCard { padding:14px; border:1px solid var(--line); border-radius:10px; background:var(--panel); }
+.agentsPaneCard[data-current] { border-color:var(--line-hot); }
+.agentsPaneCard__top { display:flex; align-items:center; gap:8px; }
+.agentsPaneCard__top>svg { color:var(--accent); flex-shrink:0; }
+.agentsPaneCard__top strong { font-size:12px; font-weight:500; overflow-wrap:anywhere; min-width:0; }
+.agentsPaneCard__top .mcOrb { width:23px; height:23px; }
+.agentsPaneCard__dot { width:7px; height:7px; border:1px solid var(--fg-2); border-radius:50%; margin-inline:5px; flex-shrink:0; }
+.agentsPaneCard__current { margin-left:auto; font-size:9px; color:var(--fg-2); }
+.agentsPaneCard p { font-size:11px; color:var(--fg-2); line-height:1.6; margin:10px 0 0; overflow-wrap:anywhere; }
+.agentsPaneCard small { display:block; color:var(--fg-2); font-size:10px; margin-top:8px; overflow-wrap:anywhere; }
+.agentsPaneCard footer { display:flex; justify-content:space-between; margin-top:16px; }
+.agentsPaneCard footer button { min-height:28px; font-size:11px; }
+.agentsPane__note { margin:24px 0 0; padding-top:18px; border-top:1px solid var(--line); color:var(--fg-2); font-size:11px; line-height:1.7; }
+@keyframes agent-pane-enter { from { opacity:0; transform:translateX(10px); } to { opacity:1; transform:translateX(0); } }
+
+.sessionsPage .workPage__heading { margin-bottom:28px; }
+.sessionsPage .workPage__heading h1 { font-size:30px; letter-spacing:-1px; margin:0 0 10px; }
+.sessionsPage .workPage__heading p { font-size:13px; color:var(--fg-2); }
+.sessionsToolbar { display:flex; align-items:center; gap:24px; justify-content:space-between; margin-bottom:20px; }
+.sessionsToolbar .workTabs { margin:0; border:0; gap:22px; }
+.sessionsToolbar .workTabs button { min-height:38px; padding:8px 0; }
+.sessionsToolbar .workSearch { padding:9px 12px; max-width:270px; background:var(--panel); border-color:var(--line); }
+.sessionsPage .sessionList { padding:0; margin:0; list-style:none; border-color:var(--line); }
+.managedSession { display:flex; align-items:center; border-bottom:1px solid var(--line); gap:10px; padding-right:5px; }
+.managedSession .sessionRow { padding:20px 8px; border:0; flex:1; min-width:0; gap:16px; border-radius:8px; }
+.managedSession .sessionRow:hover { background:var(--accent-soft); }
+.managedSession .sessionRow__body { gap:7px; }
+.managedSession .sessionRow__body strong { font-size:14px; }
+.managedSession .sessionRow__body>span { color:var(--fg-2); font-size:11px; }
+.managedSession .sessionRow__aside { gap:12px; font-size:11px; color:var(--fg-2); }
+.sessionActions { display:flex; flex-shrink:0; gap:2px; }
+.sessionRunStatus { color:var(--accent); max-width:160px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; }
+.sessionsFootnote { margin-top:20px; font-size:11px; color:var(--fg-2); }
+
+.sessionDialog { width:min(480px,calc(100vw - 36px)); max-height:calc(100dvh - 48px); padding:26px; box-sizing:border-box; background:var(--panel); color:var(--fg-1); border:1px solid var(--line-hot); border-radius:16px; box-shadow:0 24px 100px #0008; overflow:auto; }
+.sessionDialog::backdrop,.agentsPane::backdrop { background:#0009; }
+.sessionDialog>header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:24px; }
+.sessionDialog h2 { margin:0 0 8px; font-size:20px; font-weight:500; letter-spacing:-.4px; }
+.sessionDialog header p { font-size:12px; line-height:1.7; color:var(--fg-2); margin:0; }
+.sessionDialog label { display:block; font-size:12px; margin-top:20px; }
+.sessionDialog label>span { color:var(--fg-2); margin-left:6px; font-size:10px; }
+.sessionDialog input { display:block; margin-top:9px; width:100%; border:1px solid var(--line-hot); border-radius:8px; background:var(--bg-0); padding:11px 12px; color:var(--fg-1); font:inherit; font-size:13px; }
+.sessionDialog input:disabled { opacity:.6; }
+.fieldHelp { font-size:11px; line-height:1.7; color:var(--fg-2); margin:10px 0 0; }
+.sessionDialog footer { display:flex; justify-content:flex-end; gap:9px; margin-top:28px; }
+
+/* Hold-to-talk is the default; hands-free is an explicit alternative. */
+.talkWorkspace { grid-template-rows:56px minmax(285px,1fr) 235px; min-height:590px; }
+.talkWorkspace__footer { grid-template-rows:minmax(0,54px) auto 30px; }
+.talkWorkspace .voiceDock { gap:10px; }
+.voiceDock__modes { display:flex; align-items:center; justify-content:center; gap:3px; padding:3px; border:1px solid var(--line); border-radius:9px; width:max-content; margin:0 auto 12px; background:var(--panel); }
+.voiceDock__modes button { border:0; background:transparent; color:var(--fg-2); padding:7px 12px; min-height:34px; font:inherit; font-size:11px; border-radius:6px; cursor:pointer; }
+.voiceDock__modes button[aria-pressed=true] { background:var(--bg-2); color:var(--fg-1); }
+.voiceDock__modes button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.talkWorkspace .voiceDock__hold { min-width:176px; border-radius:100px; background:var(--accent); border-color:var(--accent); color:#162019; font-weight:550; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+.talkWorkspace .voiceDock__hold.is-active { background:#314c3b; color:var(--fg-1); border-color:var(--accent); }
+.voiceDock__stop { display:flex; align-items:center; gap:8px; padding:12px 20px; border:1px solid var(--line-hot); border-radius:99px; background:var(--panel); color:var(--fg-1); min-height:48px; font:inherit; font-size:13px; }
+.voiceDock__row button:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
+.talkWorkspace .voiceDock__caption { color:var(--fg-2); }
+
+@media(max-width:1100px) {
+ .chatWorkspace[data-agents-open] { grid-template-columns:minmax(0,1fr); }
+ dialog.agentsPane { position:fixed; inset:0 0 0 auto; margin:0; width:min(340px,calc(100vw - 24px)); max-width:none; height:100dvh; max-height:none; padding:24px 20px; border-left:1px solid var(--line-hot); }
+ .conversationIdentity { max-width:calc(100vw - 480px); }
+ .chatWorkspace .composerHint { display:none; }
+}
+@media(max-width:760px) {
+ .controlShell[data-route=chat] .workspaceHeader { padding-inline:16px; height:44px; }
+ .controlShell[data-route=chat] .workspaceFrame { grid-template-rows:44px minmax(0,1fr); }
+ .chatWorkspace .conversationHeader { min-height:72px; padding:10px 14px; gap:8px; }
+ .conversationHeading { gap:8px; }
+ .conversationPresence,.conversationPresence .mcOrb { width:26px; height:26px; }
+ .conversationIdentity { max-width:calc(100vw - 230px); }
+ .sessionPicker select { font-size:13px; }
+ .conversationActions { gap:0; }
+ .conversationActions .iconButton { width:32px; min-width:32px; }
+ .conversationActions .chatVoiceLink { display:none; }
+ .agentsToggle { margin-left:2px; padding:0 8px; min-height:36px; }
+ .agentsToggle>span { display:none; }
+ .conversationHistory__inner { padding:20px 18px; }
+ .chatWorkspace .conversationBottom { padding:8px 14px 10px; }
+ .chatWorkspace .messageComposer { padding:11px 12px 8px; }
+ .chatWorkspace .messageComposer textarea { font-size:16px; min-height:44px; }
+ .chatWorkspace .conversationMessage { margin-bottom:24px; }
+ .chatWorkspace .conversationMessage header { min-height:30px; }
+ .chatWorkspace .messageCopy { min-height:32px; padding-inline:6px; }
+ .sessionsToolbar { align-items:stretch; flex-direction:column; gap:10px; }
+ .sessionsToolbar .workSearch { max-width:none; }
+ .managedSession { flex-wrap:wrap; gap:0; padding:8px 0; }
+ .managedSession .sessionRow { padding:10px 4px; }
+ .sessionActions .iconButton { min-width:32px; width:32px; }
+ .managedSession .sessionRow__aside { display:none; }
+ .sessionDialog { padding:22px; }
+ .sessionDialog input { font-size:16px; }
+ .talkWorkspace { padding-inline:18px; --talk-orb-size:clamp(180px,28dvh,260px); min-height:580px; grid-template-rows:58px minmax(250px,1fr) 230px; }
+}
+@media(prefers-reduced-motion:reduce) { .agentsPane { animation:none; } }

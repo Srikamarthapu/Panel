@@ -1,0 +1,54 @@
+/* Device appearance choices are applied without remounting the agent workspace. */
+.preferencesPage { width:min(1120px,100%); margin:0 auto; padding:24px 4px 56px; }
+.preferencesHeading { max-width:610px; margin-bottom:42px; }
+.preferencesHeading h1 { font-size:clamp(29px,3vw,38px); line-height:1.15; font-weight:500; letter-spacing:-.05em; margin:12px 0; }
+.preferencesHeading p { color:#a8b4ab; font-size:14px; line-height:1.75; margin:0; }
+.preferencesLayout { display:grid; grid-template-columns:minmax(0,1fr) 250px; gap:54px; align-items:start; }
+.preferencesControls { min-width:0; }
+.preferenceSection { margin-bottom:34px; }
+.preferenceSection>h2 { font-size:15px; font-weight:500; margin:0; padding:0 0 17px; color:#dce5df; border-bottom:1px solid #344039; }
+.preferenceRow { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:25px 0; border-bottom:1px solid #28332c; }
+.preferenceRow__copy { min-width:0; max-width:330px; }
+.preferenceRow h3 { font-size:13px; font-weight:500; color:#dce5df; margin:0 0 8px; }
+.preferenceRow p { font-size:12px; line-height:1.7; color:#9daaA2; margin:0; }
+.preferenceRow__control { flex-shrink:0; }
+.preferenceChoices { display:flex; border:1px solid #39483e; border-radius:9px; padding:3px; gap:2px; background:#151c18; }
+.preferenceChoices button { min-height:36px; border:0; border-radius:6px; padding:7px 11px; font:inherit; font-size:12px; background:transparent; color:#abb9af; }
+.preferenceChoices button[aria-pressed=true] { color:#e0ede4; background:#2a3b30; box-shadow:inset 0 0 0 1px #486451; }
+.preferenceColors { display:flex; gap:7px; }
+.preferenceColors button { border:1px solid transparent; background:transparent; color:#a6b4ab; font:inherit; font-size:10px; display:flex; align-items:center; flex-direction:column; gap:8px; border-radius:8px; padding:7px 5px; min-width:43px; }
+.preferenceColors button>span:first-child { width:23px; height:23px; border-radius:50%; border:2px solid #162019; outline:1px solid #44524a; }
+.preferenceColors button[aria-pressed=true] { background:#26392d; border-color:#486451; color:#e1ede5; }
+.preferenceSwitch { display:flex; align-items:center; gap:10px; min-height:36px; min-width:80px; padding:0; border:0; background:transparent; font:inherit; font-size:12px; color:#cbd9d0; }
+.preferenceSwitch>span:first-child { position:relative; display:block; width:36px; height:22px; border-radius:30px; border:1px solid #58645c; background:#26312a; }
+.preferenceSwitch>span:first-child::after { content:""; position:absolute; width:14px; height:14px; top:3px; left:3px; background:#a8b8ad; border-radius:50%; transition:transform 160ms; }
+.preferenceSwitch[aria-checked=true]>span:first-child { background:#567b62; border-color:#81a88c; }
+.preferenceSwitch[aria-checked=true]>span:first-child::after { transform:translateX(14px); background:#e2efe6; }
+.preferencesPreview { position:sticky; top:28px; text-align:center; border-left:1px solid #2d3931; padding:10px 0 0 28px; }
+.preferencesPreview__avatar { height:220px; width:220px; max-width:100%; margin:auto; }
+.preferencesPreview__avatar .mcOrb[data-size=hero] { width:100%; height:100%; }
+.preferencesPreview h2 { font-size:18px; font-weight:450; letter-spacing:-.03em; margin:18px 0 9px; color:#dbe5de; }
+.preferencesPreview p { font-size:12px; line-height:1.7; color:#9dacA2; margin:0; }
+.preferencesPreview__links { display:flex; flex-direction:column; margin-top:36px; border-top:1px solid #2f3d33; text-align:left; }
+.preferencesPreview__links a { display:flex; justify-content:space-between; gap:12px; padding:15px 0; font-size:12px; color:#b1c4b7; border-bottom:1px solid #2f3d33; }
+.preferencesPreview__links a:hover { color:#e1eee5; }
+.preferencesFooter { display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
+.preferencesFooter>span { font-size:12px; color:#a5b4aa; }
+html[data-panel-motion=reduced] *,html[data-panel-motion=reduced] *::before,html[data-panel-motion=reduced] *::after { scroll-behavior:auto!important; transition-duration:0s!important; animation-duration:.01ms!important; animation-iteration-count:1!important; }
+html[data-panel-conversation-spacing=compact] .chatWorkspace .conversationMessage { margin-bottom:18px; }
+html[data-panel-conversation-spacing=compact] .chatWorkspace .conversationMessage p { margin-block:6px 8px; }
+html[data-panel-conversation-spacing=compact] .chatWorkspace .messageUserText { padding-block:10px; }
+html[data-panel-conversation-spacing=compact] .conversationHistory__inner { padding-top:20px; }
+html[data-panel-text-size=larger] body { font-size:16px; }
+html[data-panel-text-size=larger] :is(.controlNav__link,.controlSearch,.workspaceBreadcrumb,.quietLink,.chatVoiceLink,.preferenceRow h3,.preferenceChoices button,.preferenceSwitch,.preferencesFooter>span,.preferencesPreview__links a) { font-size:14px; }
+html[data-panel-text-size=larger] :is(.messageContent,.chatWorkspace .conversationMessage p,.chatWorkspace .messageComposer textarea,.taskRow h2) { font-size:17px; }
+html[data-panel-text-size=larger] :is(.workButton,.workTextButton,.workTabs button,.sessionRow__body>span,.workHelp,.workSearch,.preferenceRow p,.preferencesPreview p) { font-size:14px; }
+html[data-panel-text-size=larger] :is(.preferencesHeading p,.workPage__heading p,.sessionRow__body strong,.capabilityRow h2,.capabilityRow p,.workForm label,.voiceSettings__help,.voiceSettings__button,.voiceSettings__field label,.talkWorkspace__caption p) { font-size:16px; }
+html[data-panel-text-size=larger] :is(.chatWorkspace .conversationMessage header strong,.chatWorkspace .conversationMessage time,.chatWorkspace .messageCopy,.composerHint,.conversationFooter,.talkWorkspace .voiceDock__caption) { font-size:12px; }
+html[data-panel-text-size=larger] .preferenceRow__copy { max-width:350px; }
+html[data-panel-text-size=larger] .modelWorkspaceV2 .modelRowIdentity strong { font-size:17px; }
+html[data-panel-text-size=larger] .modelWorkspaceV2 .modelAssignment strong { font-size:18px; }
+html[data-panel-text-size=larger] :is(.modelWorkspaceV2 .modelProviders button,.modelWorkspaceV2 .modelRowActions button,.modelWorkspaceV2 .modelRowDetailBody p,.modelWorkspaceV2 .modelRowDetailBody dl,.modelWorkspaceV2 .modelCatalogHint,.modelWorkspaceV2 .modelRowDetailBody code) { font-size:13px; }
+@media (max-width:1120px) { .preferencesLayout { gap:30px; grid-template-columns:minmax(0,1fr) 190px; } .preferencesPreview { padding-left:20px; } .preferencesPreview__avatar { height:180px; width:180px; } .preferenceRow { align-items:flex-start; flex-direction:column; gap:16px; } .preferenceRow__copy { max-width:none; } }
+@media (max-width:700px) { .preferencesPage { padding:16px 0 42px; } .preferencesLayout { display:flex; flex-direction:column-reverse; gap:32px; } .preferencesPreview { position:static; width:100%; padding:0 0 25px; border-left:0; border-bottom:1px solid #2d3931; } .preferencesPreview__avatar { height:145px; width:145px; } .preferencesPreview__links { display:none; } .preferencesControls { width:100%; } .preferencesHeading { margin-bottom:28px; } .preferenceRow { flex-direction:row; gap:20px; } .preferenceRow__copy { max-width:280px; } }
+@media (max-width:480px) { .preferenceRow { flex-direction:column; gap:14px; } .preferenceChoices { flex-wrap:wrap; } }

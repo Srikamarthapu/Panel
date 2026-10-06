@@ -1,0 +1,73 @@
+/* A quiet, work-focused layer on Panel's existing charcoal and sage palette. */
+.workPage { width: min(1040px, 100%); margin: 0 auto; padding: 34px 8px 72px; }
+.workPage__heading { display: flex; align-items: center; justify-content: space-between; gap: 28px; margin-bottom: 36px; }
+.workPage__heading h1 { font-size: clamp(28px, 3vw, 38px); line-height: 1.15; font-weight: 500; letter-spacing: -.055em; margin: 12px 0; }
+.workPage__heading p { color: #a8b4ab; font-size: 14px; line-height: 1.7; max-width: 590px; margin: 0; }
+.workEyebrow { font-size: 10px; letter-spacing: .15em; color: #a4b3a7; }
+.workButton { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #60816d; border-radius: 9px; padding: 11px 17px; background: #2d4636; color: #e5f0e7; font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.workButton:hover { background: #36513f; }
+.workButton--quiet { background: transparent; border-color: #39463d; color: #b8c5bc; }
+.workButton:disabled, .sessionRow:disabled, .workTextButton:disabled { opacity: .5; cursor: not-allowed; }
+.workButton:focus-visible, .sessionRow:focus-visible, .workTextButton:focus-visible, .workTabs button:focus-visible { outline: 2px solid #b6d5bf; outline-offset: 4px; }
+.workForm { border: 1px solid #3d5043; border-radius: 14px; padding: 24px; margin: 0 0 28px; background: #151e18; }
+.workForm label { display: block; font-size: 13px; color: #d5dfd8; margin-bottom: 18px; }
+.workForm input, .workForm textarea, .workForm select, .sessionNameInput { width: 100%; border: 1px solid #405045; background: #111813; border-radius: 8px; color: #e3eae5; padding: 12px; display: block; margin-top: 9px; font: inherit; }
+.workForm textarea { resize: vertical; min-height: 110px; line-height: 1.65; }
+.workForm input:focus, .workForm textarea:focus, .workForm select:focus, .sessionNameInput:focus { outline: 2px solid #93b59e; outline-offset: 2px; }
+.workOptional { font-size: 11px; color: #9aaa9e; margin-left: 8px; }
+.workForm__pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.workForm__actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.workHelp { color: #a2b0a6; font-size: 12px; line-height: 1.75; margin: -3px 0 0; }
+.workList__toolbar { display: flex; align-items: center; gap: 24px; justify-content: space-between; font-size: 12px; color: #9bab9e; margin: 30px 0 18px; }
+.workSearch { display: flex; gap: 10px; align-items: center; border: 1px solid #37453b; border-radius: 9px; padding: 11px 14px; max-width: 400px; width: 100%; background: #161c18; }
+.workSearch:focus-within { outline: 2px solid #93b59e; outline-offset: 2px; }
+.workSearch input { outline: none; border: 0; min-width: 0; width: 100%; font: inherit; color: #dce6df; background: transparent; }
+.sessionList { border-top: 1px solid #334237; }
+.sessionRow { width: 100%; background: transparent; color: inherit; text-align: left; border: 0; border-bottom: 1px solid #29392d; padding: 24px 12px; display: flex; align-items: center; gap: 22px; cursor: pointer; font: inherit; }
+.sessionRow:hover { background: #18221b; }
+.sessionRow__icon { color: #93af9c; }
+.sessionRow__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.sessionRow__body strong { font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
+.sessionRow__body > span { color: #a3b0a7; font-size: 12px; display: flex; align-items: center; gap: 7px; overflow-wrap: anywhere; }
+.sessionRow__aside { display: flex; align-items: center; gap: 24px; color: #9fafA3; font-size: 12px; }
+.workTag { border: 1px solid #405847; color: #b6cebf; background: #203126; border-radius: 20px; display: inline-flex; padding: 4px 9px; font-size: 11px; line-height: 1.2; }
+.workTag--error, .workTag--interrupted { color: #f1c3ab; border-color: #705143; background: #33251f; }
+.workTag--cancelled { color: #acb7b0; border-color: #455147; background: #202823; }
+.workTabs { display: flex; gap: 28px; border-bottom: 1px solid #37463a; margin: 30px 0 0; }
+.workTabs button { font: inherit; font-size: 13px; color: #a6b4aa; padding: 0 0 14px; background: none; border: 0; border-bottom: 2px solid transparent; cursor: pointer; }
+.workTabs button[aria-pressed=true] { color: #e3ece6; border-bottom-color: #a6c7b1; }
+.workTabs button span { margin-left: 7px; color: #97ad9e; font-size: 11px; }
+.queueHealth { display: flex; align-items: center; flex-wrap: wrap; gap: 11px; font-size: 12px; color: #a6b5ab; padding: 16px 0; border-top: 1px solid #2e3c32; border-bottom: 1px solid #2e3c32; }
+.queueHealth strong { color: #d6e4da; font-size: 12px; font-weight: 500; }
+.queueHealth > span:last-child { margin-left: auto; }
+.taskRow { padding: 24px 5px; border-bottom: 1px solid #2c3a30; }
+.taskRow__top, .taskRow__bottom { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.taskRow__top time { color: #a5b4aa; display: flex; align-items: center; gap: 7px; font-size: 12px; }
+.taskRow h2 { font-size: 15px; font-weight: 400; line-height: 1.7; margin: 15px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.workTextButton { padding: 0; border: 0; background: none; display: inline-flex; gap: 7px; align-items: center; color: #b9d3c2; font: inherit; font-size: 12px; cursor: pointer; }
+.taskResult { margin-top: 20px; font-size: 13px; line-height: 1.75; color: #c4d4ca; }
+.taskResult summary { cursor: pointer; }
+.taskResult p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.workEmpty { padding: 66px 18px; text-align: center; color: #a0b4a6; }
+.workEmpty h2 { color: #d7e3db; font-weight: 400; font-size: 20px; letter-spacing: -.03em; margin: 20px 0 10px; }
+.workEmpty p { font-size: 13px; line-height: 1.7; }
+.workError { color: #ecc5b2; border: 1px solid #6b5144; border-radius: 9px; background: #30231d; padding: 14px 17px; font-size: 13px; line-height: 1.65; }
+.workNotice { color: #c0d1c5; font-size: 13px; line-height: 1.7; padding: 12px 0; }
+.workspaceBoot { min-height: 100dvh; display: grid; align-content: center; justify-items: center; padding: 30px; background: #101713; color: #d8e7dc; }
+.workspaceBoot h1 { font-size: 24px; font-weight: 400; margin-top: 22px; }
+.workspaceBoot p { max-width: 460px; line-height: 1.7; text-align: center; color: #a6b8ab; }
+.workspaceBoot__mark { width: 45px; height: 45px; border: 1px solid #6c9679; border-radius: 50%; display: grid; place-items: center; font-size: 24px; }
+.capabilityRow { padding: 23px 4px; border-bottom: 1px solid #2d3d32; display: flex; gap: 20px; align-items: flex-start; }
+.capabilityRow > svg { color: #9dbca7; margin-top: 2px; flex-shrink: 0; }
+.capabilityRow__body { flex: 1; min-width: 0; }
+.capabilityRow h2 { margin: 0 0 8px; font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
+.capabilityRow p { font-size: 13px; color: #aebfb3; line-height: 1.7; margin: 0; overflow-wrap: anywhere; }
+.capabilityRow small { display: block; color: #94a79a; font-size: 11px; margin-top: 10px; }
+.runtimeFacts { margin: 25px 0; }
+.runtimeFacts > div { display: grid; grid-template-columns: 170px 1fr; gap: 20px; padding: 18px 0; border-bottom: 1px solid #2b3c30; font-size: 13px; }
+.runtimeFacts dt { color: #9fb3a6; }
+.runtimeFacts dd { margin: 0; color: #d1e1d6; overflow-wrap: anywhere; }
+.sessionContext { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.sessionContext a, .sessionContext button { background: none; border: 0; padding: 0; font: inherit; color: #a8c5b2; font-size: 11px; cursor: pointer; }
+.sessionNameInput { margin: 0; font-size: 16px; width: min(280px, 100%); padding: 5px 8px; }
+@media (max-width: 760px) { .workPage { padding: 20px 0 50px; } .workPage__heading { align-items: flex-start; flex-direction: column; gap: 20px; margin-bottom: 26px; } .workPage__heading h1 { font-size: 29px; } .workForm { padding: 18px; } .workForm__pair { grid-template-columns: 1fr; gap: 0; } .sessionRow { gap: 12px; padding: 21px 4px; } .sessionRow__aside { gap: 10px; } .sessionRow__aside time { display: none; } .queueHealth > span:last-child { margin-left: 0; width: 100%; } .runtimeFacts > div { grid-template-columns: 1fr; gap: 8px; } .capabilityRow { gap: 12px; } .capabilityRow > .workTag { max-width: 96px; text-align: center; } }
