@@ -12,7 +12,7 @@ import { useInterfacePreferences } from "@/components/preferences/InterfacePrefe
  * use its public drawing engine with the same 64px preset, painting at the
  * actual display resolution instead of enlarging a 64px bitmap.
  */
-function HeroThinkingOrb({ state, paused, speed, reducedMotion, color, nominalSize = 64 }) {
+export function HeroThinkingOrb({ state, paused, speed, reducedMotion, color, nominalSize = 64 }) {
   const canvasRef = useRef(null);
 
   useEffect(() => {

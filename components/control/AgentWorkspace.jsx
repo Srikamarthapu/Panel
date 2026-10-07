@@ -15,6 +15,8 @@ import { useRuntime } from "./RuntimeProvider.jsx";
 import { useWorkSessions } from "@/components/work/WorkSessionProvider.jsx";
 import SessionDialog from "@/components/work/SessionDialog.jsx";
 import AgentsPane from "@/components/work/AgentsPane.jsx";
+import AgentProfileDialog from "@/components/work/AgentProfileDialog.jsx";
+import useAgentsPane from "@/components/work/useAgentsPane.js";
 
 function CopyMessage({ text }) {
   const [status, setStatus] = useState("");
@@ -36,7 +38,7 @@ export default function AgentWorkspace() {
   const runtime = useRuntime();
   const work = useWorkSessions();
   const [sessionDialog, setSessionDialog] = useState(null);
-  const [agentsOpen, setAgentsOpen] = useState(false);
+  const [agentsOpen, showAgents] = useAgentsPane();
   const [switching, setSwitching] = useState(false);
   const { avatar } = useInterfacePreferences();
   const [draft, setDraft] = useState("");
@@ -54,16 +56,10 @@ export default function AgentWorkspace() {
     .map(entry => ({ ...entry, text: entry.role === "user" ? entry.text : publicReplyText(entry.text) }))
     .filter(entry => entry.text), [voice?.transcript]);
   const overLimit = draft.length > MAX_USER_TEXT;
-  const model = voice?.config?.voiceModel || runtime?.snapshot?.model?.model || "Primary model";
+  const agentName = work?.activeAgent?.name || "Hermes";
+  const model = work?.activeAgent?.model || voice?.config?.voiceModel || runtime?.snapshot?.model?.model || "Primary model";
   const currentSession = work?.sessions?.find(item => item.id === work.activeSession?.id) || work?.activeSession;
   const sessions = (work?.sessions || []).filter(item => !item.archivedAt);
-  useEffect(() => {
-    try { setAgentsOpen(sessionStorage.getItem("panel.agents.open") === "true"); } catch { /* Optional layout preference. */ }
-  }, []);
-  function showAgents(open) {
-    setAgentsOpen(open);
-    try { sessionStorage.setItem("panel.agents.open", String(open)); } catch { /* In-memory layout still works. */ }
-  }
   async function switchSession(id) {
     setSwitching(true); setSubmitError("");
     try { await work.selectSession(id); } catch (failure) { setSubmitError(failure.message); } finally { setSwitching(false); }
@@ -107,15 +103,15 @@ export default function AgentWorkspace() {
     finally { submitting.current = false; }
   }
 
-  return <div className="chatWorkspace" data-agents-open={agentsOpen || undefined}><section className="conversationPanel" aria-label="Conversation with Hermes">
+  return <div className="chatWorkspace" data-agents-open={agentsOpen || undefined}><section className="conversationPanel" aria-label={`Conversation with ${agentName}`}>
     <header className="conversationHeader">
       <div className="conversationHeading">
         <div className="conversationPresence"><MissionOrb size="header" avatar={avatar} voiceState={voice?.state || "idle"} /></div>
         <div className="conversationIdentity"><h1 className="srOnly">{currentSession?.name || "Conversation"}</h1><label className="sessionPicker"><span className="srOnly">Switch session</span><select value={currentSession?.id || ""} disabled={work?.busy || switching} onChange={event => switchSession(event.target.value)}>{sessions.map(session => <option key={session.id} value={session.id}>{session.name}{session.activeRun ? " · working" : ""}</option>)}</select><ChevronDown size={13} aria-hidden="true" /></label><p>{currentSession?.workingDirectory ? currentSession.workingDirectory.split("/").filter(Boolean).at(-1) : "Hermes workspace"}{voiceActive ? " · Voice on" : ""}</p></div>
       </div>
       <div className="conversationActions">
-        <button type="button" className="iconButton" aria-label="New session" title="New session" disabled={work?.busy} onClick={() => setSessionDialog("new")}><Plus size={18} /></button>
-        <button type="button" className="iconButton" aria-label="Session details" title="Session details" onClick={() => setSessionDialog("edit")}><Pencil size={15} /></button>
+        <button type="button" className="iconButton" aria-label="New session" title="New session" disabled={work?.busy} onClick={event => { event.currentTarget.focus(); setSessionDialog("new"); }}><Plus size={18} /></button>
+        <button type="button" className="iconButton" aria-label="Session details" title="Session details" onClick={event => { event.currentTarget.focus(); setSessionDialog("edit"); }}><Pencil size={15} /></button>
         <Link href="/" className="iconButton chatVoiceLink" aria-label={voiceActive ? "Return to Talk" : "Talk to Hermes"} title="Voice conversation"><AudioLines size={18} /></Link>
         <button type="button" className="agentsToggle" aria-label="Agents" aria-expanded={agentsOpen} aria-controls="agents-pane" onClick={() => showAgents(!agentsOpen)}><PanelRight size={16} /><span>Agents</span>{Boolean(work?.activeRuns?.length) && <b>{work.activeRuns.length}</b>}</button>
       </div>
@@ -130,7 +126,7 @@ export default function AgentWorkspace() {
         <div className="conversationHistory__inner">
           {transcript.length ? transcript.map((entry, index) => entry.isError ? <aside key={entry.id || index} className="conversationPastError"><span>Request interrupted</span><p>{entry.text}</p></aside> :
             <article key={entry.id || index} className="conversationMessage" data-role={entry.role}>
-              <div className="conversationMessage__body"><header><strong>{entry.role === "user" ? "You" : "Hermes"}</strong>{entry.time && <time>{entry.time}</time>}<CopyMessage text={entry.text} /></header>
+              <div className="conversationMessage__body"><header><strong>{entry.role === "user" ? "You" : agentName}</strong>{entry.time && <time>{entry.time}</time>}<CopyMessage text={entry.text} /></header>
                 {entry.role === "user" ? <p className="messageUserText">{entry.text}</p> : <MessageContent text={entry.text} />}
               </div>
             </article>) : <div className="chatWorkspace__empty"><div className="chatWorkspace__presence"><MissionOrb size="hero" avatar={avatar} voiceState="idle" /></div><h2>Where shall we start?</h2><p>Think out loud, or write it down.</p></div>}
@@ -144,12 +140,12 @@ export default function AgentWorkspace() {
 
     <div className="conversationBottom">
       <form className="messageComposer" onSubmit={submit} data-busy={busy || undefined}>
-        <label className="srOnly" htmlFor="hermes-message">Message Hermes</label>
-        <textarea id="hermes-message" ref={input} disabled={!ready} placeholder="Message Hermes…" rows={1} value={draft} aria-describedby={overLimit ? "composer-limit" : "composer-help"} aria-invalid={overLimit || undefined} onChange={event => { setDraft(event.target.value); setSubmitError(""); }} onKeyDown={event => {
+        <label className="srOnly" htmlFor="hermes-message">Message {agentName}</label>
+        <textarea id="hermes-message" ref={input} disabled={!ready} placeholder={`Message ${agentName}…`} rows={1} value={draft} aria-describedby={overLimit ? "composer-limit" : "composer-help"} aria-invalid={overLimit || undefined} onChange={event => { setDraft(event.target.value); setSubmitError(""); }} onKeyDown={event => {
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(event); }
         }} />
         <div className="messageComposer__footer">
-          <Link href="/models" title="Choose your model"><span className="statusDot" />{model}<ChevronMark /></Link>
+          <Link href={work?.activeAgent ? "/agents" : "/models"} title={work?.activeAgent ? "Manage agent model" : "Choose your model"}><span className="statusDot" />{model}<ChevronMark /></Link>
           <div><span className="composerHint" id="composer-help">{busy ? "You can draft your next message" : <>Enter to send · Shift + Enter for a new line</>}</span>
             {busy && voice?.cancelCurrent ? <button type="button" className="sendMessage sendMessage--stop" aria-label="Stop current response" title="Stop current response" onClick={() => voice.cancelCurrent()}><Square size={15} fill="currentColor" /></button> : <button type="submit" className="sendMessage" aria-label="Send message" disabled={!ready || !draft.trim() || overLimit || busy || !voice}><ArrowUp size={19} /></button>}
           </div>
@@ -157,8 +153,8 @@ export default function AgentWorkspace() {
       </form>
       <div className="conversationFooter"><span role={submitError ? "alert" : undefined}>{submitError || (overLimit ? "Shorten your message before sending." : "Saved locally")}</span>{draft.length > MAX_USER_TEXT * .8 && <span id="composer-limit" data-error={overLimit || undefined}>{draft.length.toLocaleString()} / {MAX_USER_TEXT.toLocaleString()}</span>}</div>
     </div>
-  </section>{agentsOpen && <AgentsPane onClose={() => showAgents(false)} onNew={() => { showAgents(true); setSessionDialog("agent"); }} />}
-    {sessionDialog && <SessionDialog session={sessionDialog === "edit" ? currentSession : null} agent={sessionDialog === "agent"} onClose={() => setSessionDialog(null)} />}
+  </section>{agentsOpen && <AgentsPane onClose={() => showAgents(false)} />}
+    {sessionDialog === "edit" && work?.activeAgent ? <AgentProfileDialog agent={work.activeAgent} onClose={() => setSessionDialog(null)} /> : sessionDialog && <SessionDialog session={sessionDialog === "edit" ? currentSession : null} onClose={() => setSessionDialog(null)} />}
   </div>;
 }
 

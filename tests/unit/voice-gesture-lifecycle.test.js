@@ -5,6 +5,7 @@ import { createPushToTalkGesture, subscribeNativeVoiceEvent } from "../../compon
 import { initialWrapper, reducer } from "../../components/voice/voiceMachine.js";
 import { queuedVoiceReducer } from "../../components/voice/voiceEffects.js";
 import { voiceChatRequest } from "../../components/voice/voiceTransport.js";
+import { canAcceptVoiceCapture, resolveTextOnlyMode, shouldSuppressVoiceOutput } from "../../components/voice/voiceResponseMode.js";
 
 const source = fs.readFileSync(new URL("../../components/voice/VoiceProvider.jsx", import.meta.url), "utf8");
 // Execute the production imperative callbacks with fake resources. No microphone,
@@ -14,7 +15,15 @@ function callback(name, bindings, text = source) {
   const start = text.indexOf(anchor) + anchor.length;
   assert.ok(start >= anchor.length, `${name} exists`);
   const end = text.indexOf("\n  }, [", start) + 4;
-  return Function(...Object.keys(bindings), `return (${text.slice(start, end)});`)(...Object.values(bindings));
+  const injected = text === source ? {
+    conversationModeRef: ref("talk"),
+    voiceInputGenerationRef: ref(0),
+    canAcceptVoiceCapture,
+    resolveTextOnlyMode,
+    shouldSuppressVoiceOutput,
+    ...bindings,
+  } : bindings;
+  return Function(...Object.keys(injected), `return (${text.slice(start, end)});`)(...Object.values(injected));
 }
 const ref = (current = null) => ({ current });
 const flush = () => new Promise((resolve) => setImmediate(resolve));

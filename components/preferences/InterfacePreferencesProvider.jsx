@@ -16,6 +16,7 @@ const InterfacePreferencesContext = createContext(null);
 
 export default function InterfacePreferencesProvider({ children }) {
   const [preferences, setPreferences] = useState({ ...DEFAULT_INTERFACE_PREFERENCES });
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [persistent, setPersistent] = useState(true);
   // Start with a still avatar until the actual OS preference is available.
   const [systemReducedMotion, setSystemReducedMotion] = useState(true);
@@ -26,6 +27,7 @@ export default function InterfacePreferencesProvider({ children }) {
     const read = () => {
       try { setPreferences(parseInterfacePreferences(window.localStorage.getItem(INTERFACE_PREFERENCES_KEY))); }
       catch { setPersistent(false); }
+      finally { setPreferencesLoaded(true); }
     };
     const onStorage = event => { if (event.key === INTERFACE_PREFERENCES_KEY || event.key === null) read(); };
     const onChange = event => {
@@ -65,13 +67,17 @@ export default function InterfacePreferencesProvider({ children }) {
   const palette = AVATAR_PALETTES[preferences.avatarColor];
 
   useEffect(() => {
+    // The head script has already applied saved appearance. Do not replace it
+    // with server defaults while the initial storage read is still pending.
+    if (!preferencesLoaded) return;
     const root = document.documentElement;
     root.dataset.panelMotion = reducedMotion ? "reduced" : "full";
     root.dataset.panelMotionPreference = preferences.motion;
     root.dataset.panelTextSize = preferences.textSize;
     root.dataset.panelConversationSpacing = preferences.conversationSpacing;
+    root.dataset.panelAccent = preferences.avatarColor;
     root.style.setProperty("--panel-avatar-color", palette.color);
-  }, [preferences, palette, reducedMotion]);
+  }, [preferences, palette, reducedMotion, preferencesLoaded]);
 
   const resetPreferences = useCallback(() => {
     updatePreferences(DEFAULT_INTERFACE_PREFERENCES);

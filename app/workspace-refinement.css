@@ -114,8 +114,8 @@
 .voiceDock__modes button { border:0; background:transparent; color:var(--fg-2); padding:7px 12px; min-height:34px; font:inherit; font-size:11px; border-radius:6px; cursor:pointer; }
 .voiceDock__modes button[aria-pressed=true] { background:var(--bg-2); color:var(--fg-1); }
 .voiceDock__modes button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
-.talkWorkspace .voiceDock__hold { min-width:176px; border-radius:100px; background:var(--accent); border-color:var(--accent); color:#162019; font-weight:550; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
-.talkWorkspace .voiceDock__hold.is-active { background:#314c3b; color:var(--fg-1); border-color:var(--accent); }
+.talkWorkspace .voiceDock__hold { min-width:176px; border-radius:100px; background:var(--accent); border-color:var(--accent); color:oklch(from #162019 l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue))); font-weight:550; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+.talkWorkspace .voiceDock__hold.is-active { background:oklch(from #314c3b l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue))); color:var(--fg-1); border-color:var(--accent); }
 .voiceDock__stop { display:flex; align-items:center; gap:8px; padding:12px 20px; border:1px solid var(--line-hot); border-radius:99px; background:var(--panel); color:var(--fg-1); min-height:48px; font:inherit; font-size:13px; }
 .voiceDock__row button:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
 .talkWorkspace .voiceDock__caption { color:var(--fg-2); }
@@ -157,3 +157,48 @@
  .talkWorkspace { padding-inline:18px; --talk-orb-size:clamp(180px,28dvh,260px); min-height:580px; grid-template-rows:58px minmax(250px,1fr) 230px; }
 }
 @media(prefers-reduced-motion:reduce) { .agentsPane { animation:none; } }
+
+/* Saved teammates share the same quiet surface as conversation controls. */
+.talkWithAgents { display:grid; grid-template-columns:minmax(0,1fr); width:100%; min-height:0; height:100%; }
+.talkWithAgents[data-agents-open] { grid-template-columns:minmax(0,1fr) 304px; }
+.talkWithAgents .talkWorkspace { width:100%; min-width:0; }
+.agentsPane__actions { display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+.controlNav__brand>a { min-width:0; }
+.controlNav__edition { white-space:nowrap; }
+@media(min-width:681px) and (max-width:1180px) { .controlNav__brand { gap:3px; padding-inline:0; } .controlNav__brand>a { gap:7px; } }
+.agentsPane__actions .agentsPane__new { padding-inline:14px; }
+.agentsPane__profiles { display:grid; gap:12px; }
+.agentsPane__section { margin-top:26px; }
+.agentsPane__section h3 { font-size:11px; font-weight:500; color:var(--fg-2); margin:0 0 12px; }
+.agentsEmpty { padding:6px 0 22px; color:var(--fg-2); font-size:12px; line-height:1.7; }
+.agentsEmpty p { color:var(--fg-1); font-size:14px; margin:0 0 8px; }
+.agentProfileCard .agentsPaneCard__top>.iconButton { margin-left:auto; width:28px; min-width:28px; height:28px; }
+.agentRunStatus { color:var(--accent) !important; }
+.agentTask { margin-top:12px; display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
+.agentTask textarea { box-sizing:border-box; width:100%; min-height:66px; max-height:180px; resize:vertical; border:1px solid var(--line); background:var(--bg-0); color:var(--fg-1); border-radius:7px; font:inherit; font-size:12px; line-height:1.6; padding:9px; }
+.agentTask .workButton { min-height:30px; font-size:11px; padding:5px 10px; }
+.agentResult { margin-top:12px; font-size:12px; color:var(--fg-2); }
+.agentResult summary { cursor:pointer; padding-block:5px; }
+.agentResult p { white-space:pre-wrap; max-height:300px; overflow:auto; }
+.agentProfileDialog { width:min(580px,calc(100vw - 36px)); }
+.agentProfileDialog fieldset { border:0; margin:0; padding:0; min-width:0; }
+.agentProfileDialog textarea { box-sizing:border-box; display:block; width:100%; margin-top:9px; resize:vertical; min-height:130px; max-height:340px; padding:12px; border-radius:8px; border:1px solid var(--line-hot); background:var(--bg-0); color:var(--fg-1); font:inherit; font-size:13px; line-height:1.7; }
+.agentProfileDialog__models { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+:is(.agentTask textarea,.agentResult summary,.agentProfileDialog textarea,.agentsPane .workTextButton,.agentsPane .workButton):focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.agentsPane--standalone { border:0; padding:0; background:transparent; max-width:1120px; margin:0 auto; overflow:visible; animation:none; }
+.agentsPane--standalone h1 { margin:0 0 10px; font-size:32px; font-weight:500; letter-spacing:-1px; }
+.agentsPane--standalone header p { font-size:13px; }
+.agentsPane--standalone .agentsPane__actions { justify-content:flex-start; }
+.agentsPane--standalone :is(.agentsPane__profiles,.agentsPane__list) { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); align-items:start; }
+.agentsPane--standalone .agentProfileCard { padding:20px; }
+.agentsPane--standalone .agentsPaneCard__top strong { font-size:15px; }
+.agentsPane--standalone .agentsEmpty { max-width:520px; padding-block:24px; }
+.agentsPane--standalone .agentsEmpty p { font-size:18px; }
+@media(max-width:1100px) { .talkWithAgents[data-agents-open] { grid-template-columns:minmax(0,1fr); } }
+@media(max-width:680px) {
+  .agentProfileDialog__models { grid-template-columns:1fr; gap:0; }
+  .agentProfileDialog textarea,.agentTask textarea { font-size:16px; }
+  .talkWorkspace__tools { gap:4px; }
+  .talkWorkspace__tools .quietLink { display:none; }
+  .talkWorkspace__tools .agentsToggle { margin-left:2px; }
+}

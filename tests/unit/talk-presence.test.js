@@ -51,3 +51,13 @@ test("microphone setup is visible without claiming Hermes is listening", () => {
   assert.equal(starting.state, "starting");
   assert.equal(starting.active, false);
 });
+
+test("Talk distinguishes warming and failed agent sessions from readiness", () => {
+  const warming = deriveTalkPresence({ voiceState: "idle", connected: true, agentRuntimeStatus: "warming" });
+  assert.equal(warming.label, "Getting ready.");
+  assert.equal(warming.active, false);
+  const failed = deriveTalkPresence({ voiceState: "idle", connected: true, agentRuntimeStatus: "error", agentRuntimeError: "Selected model is unavailable." });
+  assert.equal(failed.state, "offline");
+  assert.equal(failed.description, "Selected model is unavailable.");
+  assert.equal(deriveTalkPresence({ voiceState: "capturing", agentRuntimeStatus: "warming" }).state, "capturing");
+});

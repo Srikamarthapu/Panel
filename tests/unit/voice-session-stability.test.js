@@ -26,12 +26,14 @@ test("playback teardown ref exists and is invoked on barge-in / stop / unmount",
   );
   // stopAudio (barge-in) must invoke it so the stall interval + stream reader
   // don't survive into the next turn.
-  const stopAudioBody = src.slice(src.indexOf("const stopAudio ="), src.indexOf("const stopAudio =") + 400);
+  const start = src.indexOf("const stopAudio =");
+  const stopAudioBody = src.slice(start, src.indexOf("// ---------- effect runner", start));
   assert.match(
     stopAudioBody,
     /currentPlaybackCleanupRef\.current\(\)/,
     "stopAudio must run the active playback cleanup (clears stall interval + reader)",
   );
+  assert.match(stopAudioBody, /ttsPrefetchRef\.current\?\.controller\.abort\(\)/, "stopAudio must cancel the next sentence as well as current playback");
   // At least three call sites: playAudio (pre-empt prior), stopAudio, unmount.
   const invocations = src.match(/currentPlaybackCleanupRef\.current\(\)/g) || [];
   assert.ok(

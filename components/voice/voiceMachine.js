@@ -397,8 +397,8 @@ function step(view, event) {
     case "RETRY_CHAT":
       return [withState(view, "thinking", { lastError: null }), [{ kind: "callChat", text: event.text, textOnly: event.textOnly, preserveContinuous: event.preserveContinuous }]];
     case "CANCEL_CURRENT":
-      return [withState(view, "idle", { continuousRequested: false, pttRequested: false, permission: view.permission === "pending" ? "unknown" : view.permission, lastError: null, requestStartedAt: null, requestPending: false }), event.teardownHandled ? [] : [
-        { kind: "cancelRequests" }, { kind: "stopAudio" }, { kind: "clearVadInterval" },
+      return [withState(view, "idle", { continuousRequested: false, pttRequested: false, permission: view.permission === "pending" ? "unknown" : view.permission, lastError: null, requestStartedAt: null, requestPending: false, streamSpeechQueue: [], streamSpeechActive: false }), event.teardownHandled ? [] : [
+        ...(event.requestsCancelled ? [] : [{ kind: "cancelRequests" }]), { kind: "stopAudio" }, { kind: "clearVadInterval" },
         { kind: "stopRecorder", discard: true }, { kind: "stopAllTracks" },
         { kind: "closeAudioContext" },
       ]];
@@ -421,6 +421,20 @@ function step(view, event) {
     case "LOAD_VOICES": {
       const voices = Array.isArray(event.voices) ? event.voices.slice() : [];
       return [{ ...view, voices }, []];
+    }
+    case "RESPONSE_MODE_CHANGED": {
+      if (event.mode !== "chat") return [view, []];
+      const voiceOnlyState = ["starting", "listening", "capturing", "speaking"].includes(view.state);
+      const nextState = voiceOnlyState || (view.state === "thinking" && !view.requestPending)
+        ? (view.requestPending ? "thinking" : "idle")
+        : view.state;
+      return [withState(view, nextState, {
+        continuousRequested: false,
+        pttRequested: false,
+        permission: view.permission === "pending" ? "unknown" : view.permission,
+        streamSpeechQueue: [],
+        streamSpeechActive: false,
+      }), []];
     }
 
     // ---------------- microphone permission flow (Req 3.8/3.9) ----------------
@@ -490,7 +504,7 @@ function step(view, event) {
         "idle",
       );
       const effects = [
-        { kind: "cancelRequests" },
+        ...(event.requestsCancelled ? [] : [{ kind: "cancelRequests" }]),
         { kind: "stopAudio" },
         { kind: "stopRecorder", discard: true },
         { kind: "stopAllTracks" },
@@ -572,10 +586,10 @@ function step(view, event) {
     // ---------------- barge-in (Req 3.10 / 5.8) ----------------
     case "BARGE_IN_DETECTED": {
       if (view.state !== "speaking") return [view, []];
-      const effects = [{ kind: "stopAudio" }];
+      const effects = [{ kind: "cancelRequests" }, { kind: "stopAudio" }];
       if (event.url) effects.push({ kind: "revokeURL", url: event.url });
       effects.push({ kind: "startRecorder" });
-      return [withState(view, "capturing"), effects];
+      return [withState(view, "capturing", { requestPending: false, streamSpeechQueue: [], streamSpeechActive: false }), effects];
     }
 
     // ---------------- STT outcomes ----------------
@@ -620,14 +634,38 @@ function step(view, event) {
 
     // ---------------- chat outcomes ----------------
     case "CHAT_PENDING":
-      return [withState(view, "thinking", { requestPending: true, actionId: event.actionId }), []];
+      return [withState(view, "thinking", { requestPending: true, actionId: event.actionId, streamSpeechQueue: [], streamSpeechActive: false, streamSpeechFailed: false }), []];
+    case "STREAM_RESET":
+      return [{ ...view, requestPending: false, streamSpeechQueue: [], streamSpeechActive: false }, []];
+    case "STREAM_TEXT": {
+      if (!view.requestPending || view.actionId !== event.actionId) return [view, []];
+      const text = publicReplyText(event.text, { partial: true }).slice(0, MAX_ASSISTANT_TEXT);
+      if (!text.trim()) return [view, []];
+      const id = `stream-${event.actionId}`;
+      const entry = makeHermesEntry(view, text, { id, pending: true });
+      const index = view.transcript.findIndex((item) => item.id === id);
+      if (index < 0) return [appendTranscript(view, entry), []];
+      return [{ ...view, transcript: view.transcript.map((item, i) => i === index ? entry : item) }, []];
+    }
+    case "STREAM_SPEECH_CHUNKS": {
+      if (!view.requestPending || view.actionId !== event.actionId || view.streamSpeechFailed || event.textOnly || view.config.autoSpeak === false || view.config.muteOutput) return [view, []];
+      const chunks = (Array.isArray(event.chunks) ? event.chunks : []).map((text) => publicReplyText(text).trim()).filter(Boolean);
+      if (!chunks.length) return [view, []];
+      const queue = [...(view.streamSpeechQueue || []), ...chunks];
+      if (view.streamSpeechActive) return [{ ...view, streamSpeechQueue: queue }, []];
+      const text = queue.shift();
+      return [withState(view, "thinking", { streamSpeechActive: true, streamSpeechQueue: queue }), [{ kind: "callTTS", text }]];
+    }
     case "CHAT_OK": {
       const response = publicReplyText(event.response);
       if (!response.trim()) {
         // No response field — Req 5.7: never call /api/voice/tts and fall
         // back to the rest state for the active mode.
         return [
-          withState(view, event.textOnly && !event.preserveContinuous ? "idle" : restState(view.continuousRequested)),
+          withState(view, event.pendingRun ? "thinking" : event.textOnly && !event.preserveContinuous ? "idle" : restState(view.continuousRequested), {
+            requestPending: event.pendingRun === true,
+            requestStartedAt: event.pendingRun ? view.requestStartedAt : null,
+          }),
           [],
         ];
       }
@@ -641,11 +679,18 @@ function step(view, event) {
       });
       const transcriptView = event.acknowledgement ? view : appendTranscript(view, hermesEntry);
       if (event.textOnly) {
-        return [withState(transcriptView, event.preserveContinuous ? "listening" : "idle", { continuousRequested: event.preserveContinuous ? view.continuousRequested : false }), []];
+        return [withState(transcriptView, event.pendingRun ? "thinking" : event.preserveContinuous ? "listening" : "idle", {
+          continuousRequested: event.pendingRun ? view.continuousRequested : event.preserveContinuous ? view.continuousRequested : false,
+          requestPending: event.pendingRun === true,
+          requestStartedAt: event.pendingRun ? view.requestStartedAt : null,
+        }), []];
       }
       if (event.audioUrl) {
         return [
-          withState(transcriptView, "speaking"),
+          withState(transcriptView, "speaking", {
+            requestPending: event.pendingRun === true,
+            requestStartedAt: event.pendingRun ? view.requestStartedAt : null,
+          }),
           [{ kind: "playAudio", url: event.audioUrl }],
         ];
       }
@@ -653,9 +698,12 @@ function step(view, event) {
       const merged = transcriptView;
       merged.caption = captionForView(merged);
       if (view.config.autoSpeak === false || view.config.muteOutput === true) {
-        return [withState(merged, restState(view.continuousRequested)), []];
+        return [withState(merged, event.pendingRun ? "thinking" : restState(view.continuousRequested), {
+          requestPending: event.pendingRun === true,
+          requestStartedAt: event.pendingRun ? view.requestStartedAt : null,
+        }), []];
       }
-      return [merged, [{ kind: "callTTS", text: spokenExcerpt(truncated) }]];
+      return [{ ...merged, requestPending: event.pendingRun === true, requestStartedAt: event.pendingRun ? view.requestStartedAt : null }, [{ kind: "callTTS", text: spokenExcerpt(truncated) }]];
     }
     case "CHAT_FAILED": {
       const combined = `${event.error || ""} ${event.details || ""}`.trim();
@@ -682,6 +730,12 @@ function step(view, event) {
     case "TTS_PLAYBACK_ENDED": {
       const effects = [];
       if (event.url) effects.push({ kind: "revokeURL", url: event.url });
+      if (view.streamSpeechActive) {
+        const queue = [...(view.streamSpeechQueue || [])];
+        const text = view.config.autoSpeak !== false && !view.config.muteOutput ? queue.shift() : null;
+        if (text) return [withState(view, "thinking", { streamSpeechQueue: queue }), [...effects, { kind: "callTTS", text }]];
+        return [withState(view, view.requestPending ? "thinking" : restState(view.continuousRequested), { streamSpeechActive: false, streamSpeechQueue: [] }), effects];
+      }
       return [
         withState(view, restState(view.continuousRequested)),
         effects,
@@ -699,7 +753,7 @@ function step(view, event) {
       effects.push({ kind: "stopAudio" });
       effects.push(emitActivityEffect(summary));
       return [
-        withState(view, restState(view.continuousRequested), { lastError: { stage: "tts", code: "TTS_UNAVAILABLE", message: "Audio playback failed. Your answer is available in Chat.", retryable: false } }),
+        withState(view, view.requestPending ? "thinking" : restState(view.continuousRequested), { streamSpeechActive: false, streamSpeechQueue: [], streamSpeechFailed: true, lastError: { stage: "tts", code: "TTS_UNAVAILABLE", message: "Audio playback failed. Your answer is available in Chat.", retryable: false } }),
         effects,
       ];
     }
@@ -757,6 +811,17 @@ function step(view, event) {
       if (!text.trim()) return [view, []];
       if (event.entryId && view.transcript.some((entry) => entry.id === event.entryId)) return [view, []];
       const finishesCurrent = view.requestPending && (!event.actionId || event.actionId === view.actionId);
+      // A streamed answer already owns playback. Commit its canonical full
+      // text without starting a second reading or cutting the current phrase.
+      if (event.streamHandled && finishesCurrent) {
+        const withoutPreview = { ...view, transcript: view.transcript.filter((entry) => entry.id !== `stream-${event.actionId}`) };
+        const updated = event.isError ? withoutPreview : appendTranscript(withoutPreview, makeHermesEntry(view, text, { id: event.entryId, time: event.time }));
+        return [withState(updated, view.streamSpeechActive ? view.state : restState(view.continuousRequested), {
+          requestPending: false,
+          requestStartedAt: null,
+          lastError: event.isError ? { stage: "chat", code: "RUN_FAILED", message: text, retryable: false } : view.streamSpeechFailed ? view.lastError : null,
+        }), []];
+      }
       if (event.isError) {
         return [withState(view, finishesCurrent ? restState(view.continuousRequested) : view.state, {
           requestPending: finishesCurrent ? false : view.requestPending,

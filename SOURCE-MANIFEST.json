@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-10-06T18:49:06.335Z",
+  "generatedAt": "2026-10-07T04:14:19.912Z",
   "files": [
     {
       "path": ".env.example",
-      "sha256": "a78a3d1d37471f9a0f0be54aafe7b261ac5487dc7ead474d53db4cee9dcbb1bc",
-      "bytes": 597
+      "sha256": "6c86a9bee78962ad7a5ad7390349b7f200bd5a5b2d2df75b279379f939da2dc0",
+      "bytes": 794
     },
     {
       "path": ".github/workflows/ci.yml",
@@ -28,18 +28,43 @@
     },
     {
       "path": "README.md",
-      "sha256": "b9b2e5d50d23e16347df170a3096bf438541cf61becc15ff9fae4d64e58ba1e4",
-      "bytes": 8659
+      "sha256": "13260ec94cbbb76366300230b146c9de1f83cb8934e123132785b446fa64fb39",
+      "bytes": 5352
     },
     {
       "path": "RELEASE-CHECKS.md",
-      "sha256": "95c2b27bbb200c896f6ea9372db423c531e910d4803787bc2267b9c5f151ea97",
-      "bytes": 4141
+      "sha256": "ab1f879f5c406264a158bcdd8a082d78dc014f2dc206425055e2493aba241709",
+      "bytes": 2784
     },
     {
       "path": "SECURITY.md",
       "sha256": "37faa42b5c2b5ddf2388b9e585e5ca98626658e8dacfc1b6f42b20399697343b",
       "bytes": 956
+    },
+    {
+      "path": "app/agents/page.jsx",
+      "sha256": "34c4dc1b2a12ef15a2b5edfe79ca5deff7ecd17e990b098566e18e9a841f3656",
+      "bytes": 249
+    },
+    {
+      "path": "app/api/agents/[id]/route.js",
+      "sha256": "c113d41d72d8da12fc58173e08f75124b4c354232c6a83f777f40ac48d731ac2",
+      "bytes": 961
+    },
+    {
+      "path": "app/api/agents/[id]/runs/route.js",
+      "sha256": "e7d712fc981e33678b8dfb049d1328235a3a8d9409c96182409be5cac066d470",
+      "bytes": 797
+    },
+    {
+      "path": "app/api/agents/delegations/route.js",
+      "sha256": "ca731d1784c29cb499877407c12b42dee49796667ff83b77ba81c7dd3d306bbb",
+      "bytes": 374
+    },
+    {
+      "path": "app/api/agents/route.js",
+      "sha256": "af105390340a25d8f3b5fd80c8c1c132252ce5943f33605699e1573fdf264b24",
+      "bytes": 916
     },
     {
       "path": "app/api/capabilities/route.js",
@@ -98,8 +123,8 @@
     },
     {
       "path": "app/api/sessions/[id]/route.js",
-      "sha256": "c88e0980c7d049729fb0c354e3c04c5a443a8a44ab93372b47244557b610b18d",
-      "bytes": 1669
+      "sha256": "b9c4ce1ec189c17523de2047c8994029b29daa7dc19b87ad56f44a9d4f63eabb",
+      "bytes": 2143
     },
     {
       "path": "app/api/sessions/adopt/route.js",
@@ -137,9 +162,19 @@
       "bytes": 2568
     },
     {
+      "path": "app/api/voice/runs/[id]/events/route.js",
+      "sha256": "00994f61080b6d384eb05278619c1803066555e8e8ac308f5a2ea174ca95d6f8",
+      "bytes": 2041
+    },
+    {
       "path": "app/api/voice/runs/route.js",
       "sha256": "fb98f2509b6b36252202f2393def1372faa677923ed79d0cc0bf6f3bb88782c8",
       "bytes": 1463
+    },
+    {
+      "path": "app/api/voice/runtime/route.js",
+      "sha256": "07d876b571c2bf61983c6131797d4b02cb01f901b584af59f673974d427f4e3f",
+      "bytes": 2550
     },
     {
       "path": "app/api/voice/status/route.js",
@@ -178,13 +213,13 @@
     },
     {
       "path": "app/control-center.css",
-      "sha256": "41e31d8fb75af0cf20ed1cee5cd8e6446d6034ee25c594d4b27e1099b6a8a5ae",
-      "bytes": 25957
+      "sha256": "734f00f09e16bb5f902bc36424af41281c5574dc517254b500f7738036fc9aa7",
+      "bytes": 34655
     },
     {
       "path": "app/conversation.css",
-      "sha256": "5873c4f759b9936870d89a1742ecc67f6bcfa29c6e08e21733102bf5ef9cc8f7",
-      "bytes": 17781
+      "sha256": "b685d9fc51447308610e11063b6b9c733d1fe3c2d23397614a7529f1caf4dbb2",
+      "bytes": 24295
     },
     {
       "path": "app/dev/voice-lifecycle/page.jsx",
@@ -193,8 +228,18 @@
     },
     {
       "path": "app/dev/voice-lifecycle/voice-lifecycle-fixture.jsx",
-      "sha256": "081e9fdc0f6d64ca6ee70a5fc481c0a30a23c70596a63c00c7c5d48e3fe2e6a4",
-      "bytes": 10845
+      "sha256": "0757cb7b73bb83bf76ba91c2d4278ea4c7bc9a5ae238a106356673a2d5213a6a",
+      "bytes": 10859
+    },
+    {
+      "path": "app/dev/voice-live/page.jsx",
+      "sha256": "1ac2ad1c02d418a1c69eff19445018bc6425bfc1eefa1eef17d82fc40105aabd",
+      "bytes": 326
+    },
+    {
+      "path": "app/dev/voice-live/voice-live-fixture.jsx",
+      "sha256": "e514e2cb04cac07d0720c545a73c70aadf6f905ee33dcfe5454329c51e7030e4",
+      "bytes": 17208
     },
     {
       "path": "app/docs/page.jsx",
@@ -203,8 +248,8 @@
     },
     {
       "path": "app/layout.jsx",
-      "sha256": "67fb176e6befeff4ddb6d9028ae3080ed707d83d177d602d080a0e58a9463a81",
-      "bytes": 852
+      "sha256": "5604c770dc023d8016959f1e76831ce4163f2e1094a4187a3fb3fc6484223e11",
+      "bytes": 1561
     },
     {
       "path": "app/loading.jsx",
@@ -228,8 +273,8 @@
     },
     {
       "path": "app/models-refinement.css",
-      "sha256": "739b53bd75538fb94fb66c43d9e1c064c9108771e94dc70d0ce5ac0a44b88058",
-      "bytes": 8683
+      "sha256": "b68d0711f42b3329d667c34774dc9ab298351182866108b1847ee5bb2ee4c845",
+      "bytes": 11457
     },
     {
       "path": "app/models/page.jsx",
@@ -243,8 +288,8 @@
     },
     {
       "path": "app/preferences.css",
-      "sha256": "7890b12836e2b12b3f9f4b350be22d5700e8675140db3815d757263890ef0bfa",
-      "bytes": 7291
+      "sha256": "94b364468cf573afbb99959a508dea8685764e3e2c93c1f2f0b61d738b211968",
+      "bytes": 9773
     },
     {
       "path": "app/projects/page.jsx",
@@ -263,8 +308,8 @@
     },
     {
       "path": "app/styles.css",
-      "sha256": "47a9d55d22a86a1054b4192479e6c7f9b49256aead8ccc9bdffc98a0f9c2c21d",
-      "bytes": 49773
+      "sha256": "ade097c5df93488fd94278c89e4d4a3e4d8fc84ad9c7f4b160000bd3d34021bf",
+      "bytes": 49916
     },
     {
       "path": "app/system/page.jsx",
@@ -283,8 +328,8 @@
     },
     {
       "path": "app/tools-refinement.css",
-      "sha256": "4085cb77ad0cf0e9b9da58296c42179ea463f15061d935a97ab2a25afa0b0595",
-      "bytes": 21371
+      "sha256": "62f164f2ec51c92e4c5d1143ffd465dfaab2b50ad0c76cd6972fc19a2baf0d8d",
+      "bytes": 29109
     },
     {
       "path": "app/tools/page.jsx",
@@ -298,8 +343,8 @@
     },
     {
       "path": "app/voice-refinement.css",
-      "sha256": "37650a705902ecaf40ab7aace7b2db3ec8dd572f88371c9f1d417e99481b6035",
-      "bytes": 14479
+      "sha256": "cf5212b428516a2300ce906923deb64349a17fba2ce7288f02327e5e07c2b9d3",
+      "bytes": 15501
     },
     {
       "path": "app/voice/page.jsx",
@@ -308,13 +353,13 @@
     },
     {
       "path": "app/work.css",
-      "sha256": "9854969f0f6354e6d178c6ff4c6f3e14f9f3b4d451468ad10250dd3707d84653",
-      "bytes": 8263
+      "sha256": "db5b9cc9df99037d8d638565f6ce3025f2fc0e8f0c92d7997f2a8efe9f2d2262",
+      "bytes": 12862
     },
     {
       "path": "app/workspace-refinement.css",
-      "sha256": "7b728ec49d651c220ddaa23a0c1635225a51503e5c6ed4e1fe310cfb398f7c47",
-      "bytes": 14143
+      "sha256": "daef10e0013d4f3548196b67d37dd74661ddd40be53bcfaf52647f63fb9721d8",
+      "bytes": 18126
     },
     {
       "path": "components/InteractivePanels.jsx",
@@ -328,8 +373,8 @@
     },
     {
       "path": "components/MissionOrb.jsx",
-      "sha256": "ad6d1e4295de8503ba97d7bd27ed45f2826a41753b5e43720a84058b64059350",
-      "bytes": 4992
+      "sha256": "64f3e0f634a29276f7c81cf433fc3c934c20f7d4d442bf3de55675fef36b9861",
+      "bytes": 4999
     },
     {
       "path": "components/avatar/bloub/BloubAvatar.jsx",
@@ -368,8 +413,8 @@
     },
     {
       "path": "components/control/AgentWorkspace.jsx",
-      "sha256": "fedaa2147d6d6d6047d6d1ac064f212b3ef74c25149c33358f303eb0d593075f",
-      "bytes": 11587
+      "sha256": "7314b77d85a4984957d134781b13b088575b214bea57a17e94e5c46c2019b94a",
+      "bytes": 11690
     },
     {
       "path": "components/control/JevRouterSettings.jsx",
@@ -378,8 +423,8 @@
     },
     {
       "path": "components/control/JevRouterSettings.module.css",
-      "sha256": "a9f923d59edf2678a295ed9b94a02795dd1dd6978af85873bf1d3eccf4bdf478",
-      "bytes": 6142
+      "sha256": "b30d6539b63330f4d6ad2953eaaa4954f58d60836a84de1b4c58af8dd0d11368",
+      "bytes": 10449
     },
     {
       "path": "components/control/MessageContent.jsx",
@@ -398,8 +443,8 @@
     },
     {
       "path": "components/control/RequestFeedback.jsx",
-      "sha256": "482df159480867bf1073747cd6b3f721dfe7914c636208b2d1c53eb001465904",
-      "bytes": 1098
+      "sha256": "feeab68d992b8511dff383046e1a4daa3746f6c75c7cf21961bdc964a8f7bc0f",
+      "bytes": 2437
     },
     {
       "path": "components/control/RuntimeProvider.jsx",
@@ -408,8 +453,8 @@
     },
     {
       "path": "components/control/TalkWorkspace.jsx",
-      "sha256": "c42cf78ea3ce2b365b9784dca1ca7837c17144f7d2d031137d6b8c03762e8dbb",
-      "bytes": 2763
+      "sha256": "3a131b0e5a273227284421e7e84012c3fd12884f9c0d1afc5a3de5f53a5b716a",
+      "bytes": 3425
     },
     {
       "path": "components/control/ThinkingDetails.jsx",
@@ -418,8 +463,8 @@
     },
     {
       "path": "components/control/WorkspaceHeader.jsx",
-      "sha256": "5aaa068657e65abe59d2782c7e08b0313e2e98338c42e836e57f5826d4f3f4ac",
-      "bytes": 922
+      "sha256": "aad3885eda44f998c20ce8a7328fd52a1040ba41bd63e5b9bb2d6f3c83867c1c",
+      "bytes": 1176
     },
     {
       "path": "components/control/useAvatarPreference.js",
@@ -433,13 +478,13 @@
     },
     {
       "path": "components/preferences/InterfacePreferencesProvider.jsx",
-      "sha256": "b9bce4ef15b2ae74ab240551e7a5343c775e941060ec9e8b3f3a7cdc9c7712b5",
-      "bytes": 4170
+      "sha256": "b47a8d062e36e856acf10ae10c875346ede35991d505c539f6d4b0b1e3142a24",
+      "bytes": 4552
     },
     {
       "path": "components/preferences/InterfaceSettings.jsx",
-      "sha256": "9e7b2cfa1606d566a7fe5e26956a28be679858268b92c5beca20d6261207c93a",
-      "bytes": 5488
+      "sha256": "54f7f8a4eb6bb8f0afd1bc7626a55b87dbfaedcfc839664b23dd191ed91c53ae",
+      "bytes": 5497
     },
     {
       "path": "components/shell/ActionRail.jsx",
@@ -463,8 +508,8 @@
     },
     {
       "path": "components/shell/TabRail.jsx",
-      "sha256": "958d984b5854fadf78e87e1afacab9c066a8fc3b77cfb35bfd2640f438d949f7",
-      "bytes": 5209
+      "sha256": "f771424096256d68e3d777242125f730f4845c59266e696fafc0c25ead5542f8",
+      "bytes": 5419
     },
     {
       "path": "components/voice/AgentActivityLine.jsx",
@@ -503,8 +548,8 @@
     },
     {
       "path": "components/voice/VoiceProvider.jsx",
-      "sha256": "0a5f330ee2d0154fcd1d119167a5f66658d30e82758922a88de0b203e8239658",
-      "bytes": 116768
+      "sha256": "4330db8f965669930a8b3fa358534207eb8a9d8deee179cd74a2ed2bfb8a9db6",
+      "bytes": 135715
     },
     {
       "path": "components/voice/VoiceSettingsPage.jsx",
@@ -517,24 +562,29 @@
       "bytes": 5507
     },
     {
+      "path": "components/voice/voiceAnswerStream.js",
+      "sha256": "cb32dcb255210c317ade925b802786032758fa48f867c28212c03195b13630ea",
+      "bytes": 7658
+    },
+    {
       "path": "components/voice/voiceCapture.js",
       "sha256": "68f50666993122a4125fea6a99a13e94db14a57f6816eb7e9808e346634e5419",
       "bytes": 2347
     },
     {
       "path": "components/voice/voiceEffects.js",
-      "sha256": "f5c0f613cf724ae1a47b328ea2a8ec8ec6bc6286026c6f4dcf49de50fd66e6bd",
-      "bytes": 962
+      "sha256": "a2ca3a0cf8ff3e997cdbc63579bd5fd7d446bdad02a44fac15f94b09922c6de9",
+      "bytes": 1637
     },
     {
       "path": "components/voice/voiceFeedback.js",
-      "sha256": "7e415aa39da9d068189378c629e7696453bbdf714b7dbd488c5a7edf5ffc07b7",
-      "bytes": 3798
+      "sha256": "d79a5e940f9a1bd17d172be01a07aa5693cc371f94676171b4e5bc9dfd2ee8b7",
+      "bytes": 5045
     },
     {
       "path": "components/voice/voiceFeedbackPlayback.js",
-      "sha256": "7186b8bce843fec64f65ab531ba7683fdadccb8574f5408b3fd9dd505ebe6f7a",
-      "bytes": 7115
+      "sha256": "2db01fc8d36342e9616c52aabeb0fe7ead6700c440b3d753745d09775de2a25d",
+      "bytes": 8713
     },
     {
       "path": "components/voice/voiceLifecycle.js",
@@ -543,13 +593,18 @@
     },
     {
       "path": "components/voice/voiceMachine.js",
-      "sha256": "40817e3528681c523982e04f34dbdfc9c3302953d7acbcebb0079398842388ba",
-      "bytes": 34986
+      "sha256": "0b66e922b72c2319e9b54f165a60bfa274475af01b5001271901fab282b51916",
+      "bytes": 39736
     },
     {
       "path": "components/voice/voiceModelOptions.js",
       "sha256": "5ed5f17286d130462ede1cb8b445842ec5deadfeaa5dba28524dde10c3bec70a",
       "bytes": 430
+    },
+    {
+      "path": "components/voice/voiceResponseMode.js",
+      "sha256": "c2a1eacc83e6fedb3cad46f3393d6a398c4d5df1c4f35443aeee96112385ce96",
+      "bytes": 1168
     },
     {
       "path": "components/voice/voiceSession.js",
@@ -567,9 +622,14 @@
       "bytes": 3180
     },
     {
+      "path": "components/work/AgentProfileDialog.jsx",
+      "sha256": "abe03f9e6795374a570f4c3f30aadaf514004c4de979d625542dbda2368d9362",
+      "bytes": 5039
+    },
+    {
       "path": "components/work/AgentsPane.jsx",
-      "sha256": "c325097ce9dd0db258f947dc6681c021d0c9af55da98ef04dadedb28a60d7de8",
-      "bytes": 4452
+      "sha256": "1d41d34bb838153af2f3a6378c4cac9ef820d63ca2deb1098637fd5976108f35",
+      "bytes": 10148
     },
     {
       "path": "components/work/SessionDialog.jsx",
@@ -578,8 +638,8 @@
     },
     {
       "path": "components/work/SessionsWorkspace.jsx",
-      "sha256": "1266c9ae95fb2ba6ef12de28ae5c72d00dbcea4b779e7ec0d27341ee1f9b1c7d",
-      "bytes": 5402
+      "sha256": "769f05ea1e7d1888fba1a6de52bd9212e4f4b27bb9268b9fb9dab37ff5507127",
+      "bytes": 5476
     },
     {
       "path": "components/work/StartupScreen.jsx",
@@ -588,8 +648,8 @@
     },
     {
       "path": "components/work/StartupScreen.module.css",
-      "sha256": "38a5add8ce4093f50fdb5ba1ca651a09eead79ca457aef8bf5b99e8a5e0f2859",
-      "bytes": 1401
+      "sha256": "9f3618745a6ada89dc29c46f5eacf6f4db9349519eb919421df217c7498baf2b",
+      "bytes": 1547
     },
     {
       "path": "components/work/TasksWorkspace.jsx",
@@ -603,13 +663,23 @@
     },
     {
       "path": "components/work/WorkSessionProvider.jsx",
-      "sha256": "761f246c70b869054972b7a5edb923bf5c34cd53acc44d3b09815a34fe92b8a9",
-      "bytes": 8557
+      "sha256": "9eca0e9e29c9acd997aa3c3c62c1729a66b8931d34ea67533005fef2c3074855",
+      "bytes": 10410
     },
     {
-      "path": "docs/harness-rework.md",
-      "sha256": "2d5d51a905ccbcfa329c4c02794ca67171512bde9f559efc00e0861cbc424a31",
-      "bytes": 10334
+      "path": "components/work/useAgentsPane.js",
+      "sha256": "213fea8a4e4f4c94fe087ba871ddbdb63aba4073073e5627a6b2e7185a23ee1f",
+      "bytes": 963
+    },
+    {
+      "path": "docs/agents.md",
+      "sha256": "9ff362ae8f096c45aea3a95b3114300506cd3696cb208fd26b02281847403bed",
+      "bytes": 3495
+    },
+    {
+      "path": "docs/harness-reliability.md",
+      "sha256": "016592487e4e7410e7b9f75fdfdcb47c7d7d35bd476bfc6687ef80f9db4862e8",
+      "bytes": 7814
     },
     {
       "path": "docs/jev.md",
@@ -627,14 +697,24 @@
       "bytes": 93
     },
     {
+      "path": "lib/agent-actions.js",
+      "sha256": "638d1f8f25013c69d4f669a61e2089b6ddace86d3c7903d22926627278e1cfc5",
+      "bytes": 1806
+    },
+    {
       "path": "lib/assistant-launch.js",
-      "sha256": "f650f7b1cfe64b86f526892ef5f5f6a9b69b2415b02aceeca10349ed0b707d63",
-      "bytes": 3540
+      "sha256": "8153a4c1c1804740b2e2dbfde5b259e92b5560575d849b87acd4c8eeda90cd82",
+      "bytes": 4250
     },
     {
       "path": "lib/assistant-runs.js",
-      "sha256": "8aab39ed16298cb2acbb6fed54048a2caabf46bbe60e19d6e030837ee2aede8f",
-      "bytes": 14970
+      "sha256": "7716cc15e201e6b74d781cdf5952241ada317db27b9b59d30d21b960a148e3d4",
+      "bytes": 15190
+    },
+    {
+      "path": "lib/assistant-stream.js",
+      "sha256": "d338e256d120fc52c645a70f5bedebcf77820209ec9f581b95aa5fc1f13af5ec",
+      "bytes": 988
     },
     {
       "path": "lib/capabilities.js",
@@ -657,6 +737,11 @@
       "bytes": 665
     },
     {
+      "path": "lib/delegated-agents.js",
+      "sha256": "3de8504be5357a1235cd5e66849767772ff0bcebd1d2825df49be067b114f53f",
+      "bytes": 4443
+    },
+    {
       "path": "lib/design-tokens.js",
       "sha256": "18d8d57e5f63d1e1fdd49fa72e9a762aaad1a232d538ab272dcb76f2bae235c9",
       "bytes": 575
@@ -670,6 +755,11 @@
       "path": "lib/elevenlabs.js",
       "sha256": "2ae7e3146a95c288583984046451080c9424ebc825d815ea6722403faab2bdbd",
       "bytes": 14830
+    },
+    {
+      "path": "lib/hermes-acp-runtime.js",
+      "sha256": "6b66baab172280a0311a075b875e38f1fa0097305f1671fc155a4886e663401f",
+      "bytes": 7272
     },
     {
       "path": "lib/hermes-command.js",
@@ -758,8 +848,8 @@
     },
     {
       "path": "lib/talk-presence.js",
-      "sha256": "0b3f5c9d7badd751bfd73802d672186232606f95439bcaf23bfc86c4644ca937",
-      "bytes": 3056
+      "sha256": "15cec3da9ca52c4d6de3c65c25d6d96f8e9c7c69990b71e22c7103c8f2175e9d",
+      "bytes": 3513
     },
     {
       "path": "lib/voice-health.js",
@@ -782,6 +872,16 @@
       "bytes": 784
     },
     {
+      "path": "lib/voiceTurnInstructions.js",
+      "sha256": "dbc7264164df71f1be1d8e77909c038a8a3ea515d878b4e5711f5059ca50e83c",
+      "bytes": 4119
+    },
+    {
+      "path": "lib/work-agents.js",
+      "sha256": "afa3a7cb0939d9c020ab6a6478826027dd502884ffe5fed2e27e8456d3a64190",
+      "bytes": 6307
+    },
+    {
       "path": "lib/work-queue.js",
       "sha256": "85fe4101cf5d4bd1c210bc6fca8ba806eecafb232736c4ef97f9ad90f7230ca3",
       "bytes": 9128
@@ -793,8 +893,8 @@
     },
     {
       "path": "lib/work-sessions.js",
-      "sha256": "72a5b88493d01cf5e33822232b96b9e38f79e55479207ffec9084e4f07660214",
-      "bytes": 9026
+      "sha256": "a353c66783203c7b3cba0113dc9bc3dc005404753987ece2117c61b1e03e1319",
+      "bytes": 9089
     },
     {
       "path": "lib/work-store.js",
@@ -808,12 +908,12 @@
     },
     {
       "path": "package-lock.json",
-      "sha256": "eb9a2fb5103091bc6f7fa6e010645a9caeb2fd0ae548aafbdccfe344e34b6170",
+      "sha256": "46408eb10f2e991a84754beb43781884efa6dd0b02056341bede57504fcd1f93",
       "bytes": 45057
     },
     {
       "path": "package.json",
-      "sha256": "55194cfe8955957a8ce96edab18a2fc9070523c867206508796d060639991353",
+      "sha256": "f693e54dbd0ad8067952a16728af48e72ef6fbac5ee10c3fe2167f1f3af7c139",
       "bytes": 1253
     },
     {
@@ -932,14 +1032,19 @@
       "bytes": 8856
     },
     {
+      "path": "scripts/agents/control.mjs",
+      "sha256": "4596ae1a84b64ff41ffcfedeb8c485c02805df36b1928e2188336887d19db423",
+      "bytes": 1475
+    },
+    {
       "path": "scripts/build-panel.mjs",
       "sha256": "05669e5689c241ff05b02839012be7e5f2066bd87d194d2998e2c3e50d1f69da",
       "bytes": 859
     },
     {
       "path": "scripts/doctor.mjs",
-      "sha256": "fd1fada592a25b40e2bc931ccdf317f6f693e59a3cbaa310650275a907fb93a7",
-      "bytes": 4392
+      "sha256": "8c13eefeb7d9c97bea34f6c99c4d128581b1be578cca486350099d3d62b04bc6",
+      "bytes": 3905
     },
     {
       "path": "scripts/load-panel-env.mjs",
@@ -958,8 +1063,8 @@
     },
     {
       "path": "scripts/release/export.mjs",
-      "sha256": "1d6866f621d4e1c429d9cf5b2ad7dd9b8edfef6c8016cd5433e9e6b33584c32d",
-      "bytes": 4403
+      "sha256": "1234071399da37a01458a39c9626b691e496ff305bc5f06b9c1de4e3ee2a1e76",
+      "bytes": 4753
     },
     {
       "path": "scripts/runtime/inventory.py",
@@ -972,9 +1077,14 @@
       "bytes": 958
     },
     {
+      "path": "scripts/start-mission-control.sh",
+      "sha256": "37d60392bbbf8463800baa56285642547688c84f39a3189fc5e0a9c352a84eec",
+      "bytes": 946
+    },
+    {
       "path": "scripts/start-panel.mjs",
-      "sha256": "97fbf91df0d2e59117bff0d093870380980d81040b7dbb2aa9e7ecb747bd2506",
-      "bytes": 1219
+      "sha256": "30bf1d8bef199cc3f3b937a5e4fd925e7fd541678827d810921e1a84a295ba61",
+      "bytes": 1288
     },
     {
       "path": "scripts/voice/alias-loader.mjs",
@@ -985,6 +1095,11 @@
       "path": "scripts/voice/fast-path-harness.mjs",
       "sha256": "7a5bca84a81282e408eb2d89c66f4ec134652d4fd270149c6d557cabbbeb54f6",
       "bytes": 13684
+    },
+    {
+      "path": "scripts/voice/hermes-acp-worker.mjs",
+      "sha256": "b2eea6200957f97708d51db215cec7bacddd27a55233d7ee05c60195336ce1e2",
+      "bytes": 13241
     },
     {
       "path": "scripts/voice/install-hermes-early-turn-result.py",
@@ -1007,14 +1122,44 @@
       "bytes": 4272
     },
     {
+      "path": "scripts/voice/launch-panel-acp.py",
+      "sha256": "9c7ecd178402b6528190a9e9b29fa2ae48de8e776ddd3778be4347dfa8e6a55c",
+      "bytes": 5418
+    },
+    {
+      "path": "scripts/voice/panel-acp.py",
+      "sha256": "4b416120efefe7d61e32b6e5028cf6db68d22b2a9a16b17eacf5045cd02e70b4",
+      "bytes": 10104
+    },
+    {
+      "path": "scripts/voice/panel_delegation.py",
+      "sha256": "1716474547acc932acb4cb2715d27cea02e2e78e961e81312b80825cf15a36b0",
+      "bytes": 15108
+    },
+    {
+      "path": "scripts/voice/panel_profile_identity.py",
+      "sha256": "177d7cc95d27f5e419bd149b9ab31f0b7c0330cb5231eb46c4e4630e75b45d9b",
+      "bytes": 4803
+    },
+    {
+      "path": "scripts/voice/panel_profile_tools.py",
+      "sha256": "c0feda24c0244f2e29ba477c16841d0d90d38beb98397ed0bff0bb37abc3e521",
+      "bytes": 11167
+    },
+    {
       "path": "scripts/voice/route-jev-control.py",
       "sha256": "619f8ee16a2a258f866faa7ba5c0e100dcf7054273697491a0466094b44c7086",
       "bytes": 2049
     },
     {
+      "path": "scripts/voice/run-hermes-acp-action.mjs",
+      "sha256": "fac0aa1b86c560c4ad11575786638303ab021983a9116360dd7d805b8efc74ff",
+      "bytes": 7812
+    },
+    {
       "path": "scripts/voice/run-hermes-action.mjs",
-      "sha256": "b985dfca679f1d029b93b95180584b19a61e6cd8b85139fd8db68f2e5dd8fbf4",
-      "bytes": 18501
+      "sha256": "9d73963227a2e8533f21c66a601031cda4d9f65501853d3c7769f67ad5bba7cc",
+      "bytes": 17971
     },
     {
       "path": "scripts/voice/run-hermes-child.mjs",
@@ -1030,6 +1175,16 @@
       "path": "scripts/work-queue-worker.mjs",
       "sha256": "0c9a976c74a08ba3c7c0f2208319edabaa243974ffcff9930359b8ab6e4dbb0d",
       "bytes": 1273
+    },
+    {
+      "path": "tests/e2e/accent-theming.spec.js",
+      "sha256": "32a8c8380e28046316ed56f96fce75dc44fc2598bfa29c6c5e92348c2c27c142",
+      "bytes": 3960
+    },
+    {
+      "path": "tests/e2e/agent-profiles.spec.js",
+      "sha256": "c6d3583a5599e71360ed5faeb383ee9b12e641396b791561591d9c34091b2d58",
+      "bytes": 9688
     },
     {
       "path": "tests/e2e/bloub-tracking.spec.js",
@@ -1048,8 +1203,8 @@
     },
     {
       "path": "tests/e2e/session-management.spec.js",
-      "sha256": "f39f596514550d9455c9956892bb87aeecb5a334b111a343c2f23b85f97b1e86",
-      "bytes": 13353
+      "sha256": "12a308fe2dd2f3e8ff92c451fe186f2da93e2f40354c61b761e87245201924ff",
+      "bytes": 13614
     },
     {
       "path": "tests/e2e/shell.spec.js",
@@ -1062,14 +1217,19 @@
       "bytes": 4469
     },
     {
+      "path": "tests/e2e/voice-conversation-mode.spec.js",
+      "sha256": "505a16124b293771067fa415c910492f4e5b04dc818c747ce619fae9f1fa4a0b",
+      "bytes": 11179
+    },
+    {
       "path": "tests/e2e/workspace.spec.js",
-      "sha256": "83cf8f887e9d77c9fde25591cb36299b65a38e28fe83cef5796223334f1cf9aa",
-      "bytes": 15625
+      "sha256": "5980546fe6efeaeb0f96c2acfb4d2340ac66c25dfab4891e0064ec3d32f9aa06",
+      "bytes": 16221
     },
     {
       "path": "tests/helpers/workspace.js",
-      "sha256": "59b01315e71276a67451f29dbcbeafc78af2f1aed6a0bfa11a6c6d98f2520c4f",
-      "bytes": 6659
+      "sha256": "8dba12290763ecae789bcc6b8df4a20ae4d7ab392f9943e8c6020a0e631f4750",
+      "bytes": 13288
     },
     {
       "path": "tests/hermes-host/test_jev_discord_model_route.py",
@@ -1207,6 +1367,11 @@
       "bytes": 6053
     },
     {
+      "path": "tests/unit/accent-theming.test.js",
+      "sha256": "eb7c25db17d195ead399538438501f17ba02613f09f30bec5a311546b3ef173d",
+      "bytes": 3270
+    },
+    {
       "path": "tests/unit/assistant-execution-stop.test.js",
       "sha256": "ab1b79d9f5f25e0f6ac57a757a3cbb05b4134f7d8a5704c8aedf3a6b3c99976f",
       "bytes": 9285
@@ -1245,6 +1410,16 @@
       "path": "tests/unit/control-center-status.test.js",
       "sha256": "4a1b12237123690827f22676109d06fb6d54dcb2caeacd3d0264677a977a2cce",
       "bytes": 4235
+    },
+    {
+      "path": "tests/unit/delegated-agents.test.js",
+      "sha256": "2c4dba68ff740d7dd7426d9b06b564838722740faee826310081e64cce123592",
+      "bytes": 3707
+    },
+    {
+      "path": "tests/unit/hermes-acp-runtime.test.js",
+      "sha256": "b217ff3074305a683a8257963446c75791356db89b87072fb0d87d99c0986400",
+      "bytes": 23345
     },
     {
       "path": "tests/unit/hermes-model-catalog-bridge.test.js",
@@ -1297,6 +1472,31 @@
       "bytes": 16455
     },
     {
+      "path": "tests/unit/panel-acp-launcher.test.py",
+      "sha256": "38d332e8f9abc4e5c8cffe7b1ac079c0ea3bc5e64dba98a524ab055ee402263f",
+      "bytes": 4331
+    },
+    {
+      "path": "tests/unit/panel-acp-restore.test.py",
+      "sha256": "8544cc86ec89b2227482c94c88c977602813bb7a9edd4b9fce05c00578ee98bd",
+      "bytes": 9007
+    },
+    {
+      "path": "tests/unit/panel-delegation.test.py",
+      "sha256": "57476ad942d3514d087b6b7bb8e88ebd4baf4f9d7a158b2d6b39dd8ca3b631f7",
+      "bytes": 12200
+    },
+    {
+      "path": "tests/unit/panel-profile-identity.test.py",
+      "sha256": "b3a172025838b8926f73a41649a14c6dfaf644305ddd5e6ab433fa09d7f6ea9d",
+      "bytes": 10155
+    },
+    {
+      "path": "tests/unit/panel-profile-tools.test.py",
+      "sha256": "cb33cdaa9aae1133bd494820664b5c570183559ba84ed46fc124778c9cb26148",
+      "bytes": 10069
+    },
+    {
       "path": "tests/unit/public-reply.test.js",
       "sha256": "454b71ae860a49be5d178b2d2a85616be26ee3a61e80135c13aafa42f976c6a2",
       "bytes": 4801
@@ -1313,8 +1513,8 @@
     },
     {
       "path": "tests/unit/talk-presence.test.js",
-      "sha256": "80fc4b232ec13266c2fac49d58f3ee990bc4848fc95120f12707071592864153",
-      "bytes": 2787
+      "sha256": "7bd86e3a6c835ae71776b2cf365bb0c6ed4355a85b5c284fc83d1b2710157adc",
+      "bytes": 3460
     },
     {
       "path": "tests/unit/ticker-activity-source.test.js",
@@ -1330,6 +1530,11 @@
       "path": "tests/unit/voice-activity-ticker.test.js",
       "sha256": "46e22e20666e7602e61dbfaf761e40326c3ee246529ccdf8c8f1ef1efd0d072f",
       "bytes": 2969
+    },
+    {
+      "path": "tests/unit/voice-answer-stream.test.js",
+      "sha256": "2914c649b5fac1719ed13599f8b57abb4f333c2d43c9f17ef0709de3fde67e09",
+      "bytes": 11813
     },
     {
       "path": "tests/unit/voice-capture.test.js",
@@ -1362,14 +1567,19 @@
       "bytes": 4251
     },
     {
+      "path": "tests/unit/voice-feedback-handoff.test.js",
+      "sha256": "78e8c969bff5dd9f38fed8d11d6954ea31a140f92b35515a235092b9c2be043e",
+      "bytes": 1874
+    },
+    {
       "path": "tests/unit/voice-feedback-playback.test.js",
       "sha256": "6fafc3eaf77767a1e2bbd0e836dc6320036d7871f3fa45138639f0e0766b3c60",
       "bytes": 6490
     },
     {
       "path": "tests/unit/voice-gesture-lifecycle.test.js",
-      "sha256": "51d834391b1d9f4a0cc13744dd7a1ed4f47a93300a97c411a28b9105d86cb3b0",
-      "bytes": 11876
+      "sha256": "3186f8d5e3189b13a4d051a60663c3269b4cc11a2d72793719437d090469ec3f",
+      "bytes": 12239
     },
     {
       "path": "tests/unit/voice-health.test.js",
@@ -1407,9 +1617,14 @@
       "bytes": 12049
     },
     {
+      "path": "tests/unit/voice-response-mode.test.js",
+      "sha256": "70d3b785795a00b8038867e2f04fcb1f5d31d18cc717d2868ff6c8c50b47301a",
+      "bytes": 14746
+    },
+    {
       "path": "tests/unit/voice-session-stability.test.js",
-      "sha256": "554f31a28c14c10b8d135dfbf9ec61d5d682f563dc3dc8867efd201d87799f2a",
-      "bytes": 4087
+      "sha256": "68d88f18a2613c31754c13d9b16531e36cf23c0b97e72f6b16a7c0a2811da5e5",
+      "bytes": 4275
     },
     {
       "path": "tests/unit/voice-session.test.js",
@@ -1427,6 +1642,11 @@
       "bytes": 4718
     },
     {
+      "path": "tests/unit/voice-tool-progress.test.js",
+      "sha256": "6d025e83e763f97248a85b2268c3f496fb3582b7254e3da557cf9ac751ea1222",
+      "bytes": 2622
+    },
+    {
       "path": "tests/unit/voice-tts-crispness.test.js",
       "sha256": "9a93960c01384f8ec4e29ce1067ab66d61dc9a3437a3fd12509c602cf33cab8c",
       "bytes": 7978
@@ -1442,9 +1662,14 @@
       "bytes": 1871
     },
     {
+      "path": "tests/unit/work-agents.test.js",
+      "sha256": "fa71fe0f452817ed06801ee6a1be0b57047c39208138dd6dd05a921e9d8479f9",
+      "bytes": 11245
+    },
+    {
       "path": "tests/unit/work-session-management.test.js",
-      "sha256": "ef8a92939e61eb75ddf73448ff77d84c9466e523839f7b3c72a7a3a365daf1f6",
-      "bytes": 15818
+      "sha256": "a72cd5784a48c4fd07eec0b72c2e420f2b8fc06c11bd6f6cfcdb61d7e430f909",
+      "bytes": 16279
     },
     {
       "path": "tests/unit/work-sessions-adopt.test.js",

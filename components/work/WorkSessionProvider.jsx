@@ -27,6 +27,9 @@ function BusyBridge({ setBusy }) {
 
 export default function WorkSessionProvider({ children }) {
   const [sessions, setSessions] = useState([]);
+  const [agents, setAgents] = useState([]);
+  const [delegations, setDelegations] = useState([]);
+  const [agentsError, setAgentsError] = useState("");
   const [active, setActive] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -44,9 +47,14 @@ export default function WorkSessionProvider({ children }) {
   }, []);
   const refresh = useCallback(async () => {
     const requestRevision = ++refreshRevision.current;
-    const data = await workRequest("/api/sessions");
+    const [data, agentData] = await Promise.all([
+      workRequest("/api/sessions"),
+      workRequest("/api/agents?archived=true").catch(() => null),
+    ]);
     if (requestRevision === refreshRevision.current) {
       setSessions(data.sessions);
+      if (agentData) { setAgents(agentData.agents || []); setDelegations(agentData.delegations || []); setAgentsError(""); }
+      else setAgentsError("Agent status could not refresh. Saved conversations remain available.");
       setActive(previous => {
         const session = data.sessions.find(item => item.id === previous?.session.id);
         return session ? { ...previous, session } : previous;
@@ -144,7 +152,25 @@ export default function WorkSessionProvider({ children }) {
     return data.run;
   }, [refresh]);
   const activeRuns = useMemo(() => sessions.filter(session => session.activeRun).map(session => ({ ...session.activeRun, sessionName: session.name, workingDirectory: session.workingDirectory })), [sessions]);
-  const value = useMemo(() => ({ sessions, activeRuns, activeSession: active?.session, busy, loading, error, refresh, selectSession, createSession, updateSession, renameSession, pinSession, archiveSession, restoreSession, stopSessionRun }), [sessions, activeRuns, active, busy, loading, error, refresh, selectSession, createSession, updateSession, renameSession, pinSession, archiveSession, restoreSession, stopSessionRun]);
+  const activeAgent = agents.find(agent => agent.id === active?.session?.agentId) || null;
+  const saveAgent = useCallback(async (input, id) => {
+    const data = await workRequest(id ? `/api/agents/${id}` : "/api/agents", { method: id ? "PATCH" : "POST", body: JSON.stringify(input) });
+    const list = await refresh();
+    if (input.archived && data.agent.sessionId === activeRef.current?.session.id) {
+      const next = list.find(session => !session.archivedAt && session.id !== data.agent.sessionId);
+      if (next) await selectSession(next.id); else await createSession({ name: "New session" });
+    }
+    return data.agent;
+  }, [refresh, selectSession, createSession]);
+  const runAgent = useCallback(async (id, text, actionId) => {
+    const data = await workRequest(`/api/agents/${id}/runs`, { method: "POST", body: JSON.stringify({ text, actionId }) });
+    await refresh(); return data;
+  }, [refresh]);
+  const stopDelegation = useCallback(async agent => {
+    const data = await workRequest("/api/agents/delegations", { method: "DELETE", body: JSON.stringify({ sessionId: agent.sessionId, runId: agent.runId, agentId: agent.id }) });
+    await refresh(); return data;
+  }, [refresh]);
+  const value = useMemo(() => ({ sessions, agents, delegations, agentsError, activeAgent, saveAgent, runAgent, stopDelegation, activeRuns, activeSession: active?.session, busy, loading, error, refresh, selectSession, createSession, updateSession, renameSession, pinSession, archiveSession, restoreSession, stopSessionRun }), [sessions, agents, delegations, agentsError, activeAgent, saveAgent, runAgent, stopDelegation, activeRuns, active, busy, loading, error, refresh, selectSession, createSession, updateSession, renameSession, pinSession, archiveSession, restoreSession, stopSessionRun]);
   if (!active) return <StartupScreen loading={loading} error={error} onRetry={boot} />;
   return <WorkSessionContext.Provider value={value}>
     <VoiceProvider key={`${active.session.id}:${active.revision}`} sessionId={active.session.id} initialTranscript={active.messages || []} initialActiveRun={active.activeRun}>

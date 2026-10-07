@@ -99,6 +99,18 @@ test("sessions create, select, rename, and reload with separate histories and dr
   await expect(page.getByText("Beta history stays in Beta.", { exact: true })).toBeVisible();
 });
 
+test("an unavailable saved working folder explains how to recover the session", async ({ page }) => {
+  await mockWorkspace(page, { sessions: [{ id: "qa-missing-folder", name: "QA Missing Folder" }] });
+  const message = "This session's working folder is unavailable. Choose an existing folder in Session details.";
+  await page.route("**/api/voice/runtime", route => route.fulfill({ status: 409, json: {
+    ready: false,
+    code: "working_directory_unavailable",
+    error: message,
+  } }));
+  await page.goto("/");
+  await expect(page.getByText(message, { exact: true })).toBeVisible();
+});
+
 test("a restored accepted run continues while sessions switch and returns to its original conversation", async ({ page }) => {
   const run = { id: "qa-pending-run", sessionId: "qa-alpha", state: "active", statusLabel: "Reading a file", textOnly: true };
   const fixture = await mockWorkspace(page, { sessions: [{ ...sessions[0], activeRun: run }, sessions[1]] });

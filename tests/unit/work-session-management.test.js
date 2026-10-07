@@ -223,7 +223,16 @@ test("two detached fake agents execute together and stopping one preserves the o
     assert.equal(sessions.getWorkSession(b.id).messages.at(-1).text, "Finished parallel-b");
     assert.equal(sessions.getWorkSession(a.id).messages.some(entry => entry.text === "Finished parallel-b"), false);
   } finally {
-    for (const child of [first, second]) { try { process.kill(-child.pid, "SIGKILL"); } catch {} }
-    for (const id of ["parallel-a", "parallel-b"]) { const run = runs.getAssistantRun(id); if (run?.hermesProcessGroupPid) try { process.kill(-run.hermesProcessGroupPid, "SIGKILL"); } catch {} }
+    // Cleanup must not depend on getAssistantRun(): its transcript reconciliation
+    // takes the same session lock as the detached workers, so a slow filesystem
+    // can turn a successful run into a cleanup timeout and mask the real result.
+    const processGroups = new Set([first, second].map(child => child.pid).filter(Number.isInteger));
+    for (const id of ["parallel-a", "parallel-b"]) {
+      try {
+        const run = JSON.parse(fs.readFileSync(path.join(process.env.PANEL_DATA_DIR, "assistant-runs", `${id}.json`), "utf8"));
+        if (Number.isInteger(run.hermesProcessGroupPid)) processGroups.add(run.hermesProcessGroupPid);
+      } catch {}
+    }
+    for (const pid of processGroups) { try { process.kill(-pid, "SIGKILL"); } catch {} }
   }
 });

@@ -3,14 +3,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import VoiceProvider, { useVoice } from "../../../components/voice/VoiceProvider.jsx";
 
 const memoryStorage = () => { const values = new Map(); return { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, String(value)), removeItem: (key) => values.delete(key) }; };
-function waveBlob(seconds = 0.35) {
+export function waveBlob(seconds = 0.35) {
   const rate = 8000, count = Math.floor(rate * seconds), bytes = new Uint8Array(44 + count * 2), view = new DataView(bytes.buffer);
   const text = (at, value) => [...value].forEach((char, index) => view.setUint8(at + index, char.charCodeAt(0)));
   text(0, "RIFF"); view.setUint32(4, 36 + count * 2, true); text(8, "WAVE"); text(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true); view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true); text(36, "data"); view.setUint32(40, count * 2, true);
   for (let index = 0; index < count; index += 1) view.setInt16(44 + index * 2, Math.sin(index / rate * Math.PI * 880) * 5000, true);
   return new Blob([bytes], { type: "audio/wav" });
 }
-function createSyntheticRuntime() {
+export function createSyntheticRuntime() {
   let stream, context, scheduled = false, sttTurn = 0, detectorTurn = 0;
   const getUserMedia = async () => {
     if (stream?.getAudioTracks().some((track) => track.readyState === "live")) return stream;

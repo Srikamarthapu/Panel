@@ -8,12 +8,13 @@ const destination = process.argv[2] && path.resolve(process.argv[2]);
 if (!destination || destination === root || destination.startsWith(root + path.sep) || fs.existsSync(destination)) {
   throw new Error("Pass a new destination directory outside this checkout; existing destinations are never overwritten.");
 }
-const roots = ["app", "components", "lib", "runtime/hermes-jev", "tests", "public/voice-vad", "scripts/models", "scripts/runtime", "scripts/release", ".github/workflows"];
-const files = ["package.json", "package-lock.json", "next.config.mjs", "jsconfig.json", "playwright.config.js", "proxy.js", "README.md", "LICENSE", "NOTICE.md", "CONTRIBUTING.md", "SECURITY.md", "RELEASE-CHECKS.md", ".env.example", "scripts/doctor.mjs", "scripts/build-panel.mjs", "scripts/start-panel.mjs", "scripts/load-panel-env.mjs", "scripts/work-queue-worker.mjs", "docs/jev.md", "docs/harness-rework.md", "docs/model-catalog.md"];
-const voiceScripts = ["alias-loader.mjs", "fast-path-harness.mjs", "run-hermes-action.mjs", "run-hermes-child.mjs", "soak-15-turns.mjs", "install-hermes-early-turn-result.py", "install-jev-runtime.py", "install-jev-discord-route.py", "route-jev-control.py", "jev-control-route.mjs"];
+const roots = ["app", "components", "lib", "runtime/hermes-jev", "tests", "public/voice-vad", "scripts/agents", "scripts/models", "scripts/runtime", "scripts/release", ".github/workflows"];
+const files = ["package.json", "package-lock.json", "next.config.mjs", "jsconfig.json", "playwright.config.js", "proxy.js", "README.md", "LICENSE", "NOTICE.md", "CONTRIBUTING.md", "SECURITY.md", "RELEASE-CHECKS.md", ".env.example", "scripts/doctor.mjs", "scripts/build-panel.mjs", "scripts/load-panel-env.mjs", "scripts/start-panel.mjs", "scripts/work-queue-worker.mjs", "scripts/start-mission-control.sh", "docs/agents.md", "docs/harness-reliability.md", "docs/model-catalog.md", "docs/jev.md"];
+const voiceScripts = ["alias-loader.mjs", "fast-path-harness.mjs", "hermes-acp-worker.mjs", "launch-panel-acp.py", "panel-acp.py", "panel_delegation.py", "panel_profile_identity.py", "panel_profile_tools.py", "run-hermes-acp-action.mjs", "run-hermes-action.mjs", "run-hermes-child.mjs", "soak-15-turns.mjs", "install-hermes-early-turn-result.py", "install-jev-runtime.py", "install-jev-discord-route.py", "route-jev-control.py", "jev-control-route.mjs"];
 for (const file of voiceScripts) files.push(`scripts/voice/${file}`);
 const blocked = new Set(["node_modules", "__pycache__", ".pytest_cache", ".DS_Store", ".git", "target"]);
 const excludedDirectories = new Set(["app/dev/voice-endpointing"]);
+const excludedFiles = new Set(["tests/unit/desktop-startup.test.js"]);
 const allowedExtensions = new Set([".js", ".jsx", ".mjs", ".css", ".json", ".py", ".md", ".txt", ".yaml", ".yml", ".sh", ".onnx", ".wasm"]);
 function checkedSourceStat(relative) {
   const absolute = path.resolve(root, relative);
@@ -30,7 +31,7 @@ function checkedSourceStat(relative) {
   throw new Error(`Refusing empty path: ${relative}`);
 }
 function collect(relative) {
-  if (excludedDirectories.has(relative)) return;
+  if (excludedDirectories.has(relative) || excludedFiles.has(relative)) return;
   const absolute = path.join(root, relative);
   const info = checkedSourceStat(relative);
   if (info.isDirectory()) {

@@ -11,6 +11,7 @@ import { labelForToolCall } from "../../lib/hermesToolLabels.js";
 import { routeControlModel } from "./jev-control-route.mjs";
 import { recordSessionRun, validateWorkingDirectory } from "../../lib/work-sessions.js";
 import { dataDirectory } from "../../lib/work-store.js";
+import { buildControlSystemInstructions, turnInstructionsForTextOnly } from "../../lib/voiceTurnInstructions.js";
 
 const actionId = process.argv[2];
 const childGate = fileURLToPath(new URL("./run-hermes-child.mjs", import.meta.url));
@@ -117,10 +118,9 @@ async function main() {
     ? path.join(hermesRepo, "venv", "Scripts")
     : path.join(hermesRepo, "venv", "bin");
   const instruction = [
-    "You are Hermes in the user's personal control center. Talk and Chat share this conversation.",
-    "Use actual configured tools whenever a request needs current or personal information or an action. Never claim an action succeeded without its tool result. If a service fails, explain the specific blocker and the next useful step. Do not invent access limitations without checking available tools.",
+    buildControlSystemInstructions({ agentName: payload.agentName, agentSoul: payload.agentSoul }),
+    turnInstructionsForTextOnly(payload.textOnly),
     "Only your final answer is shown in conversation. Tool progress is displayed separately. Never include internal tool markup, token usage, or protocol in your answer. Ask a concise question when genuinely missing information; otherwise finish the authorized work.",
-    payload.textOnly ? "This is a written conversation. Give complete, useful answers with readable Markdown, code, lists, and links when useful. There is no short-character reply limit." : "This turn came from speech. Lead with a natural concise spoken answer, but include all necessary details in the shared transcript. Do not sacrifice the substance of the user's request for brevity.",
     !session.hermesSessionId && payload.history?.length ? `Earlier conversation imported from this dashboard (context only):\n${JSON.stringify(payload.history).slice(-12000)}` : "",
   ].filter(Boolean).join("\n\n");
   const env = { ...process.env, PANEL_DATA_DIR: dataDirectory(), HERMES_HOME: hermesHome, HERMES_REPO: hermesRepo, PATH: [path.join(home, ".local", "bin"), hermesBin, "/opt/homebrew/bin", "/usr/local/bin", process.env.PATH || ""].filter(Boolean).join(path.delimiter), HERMES_EPHEMERAL_SYSTEM_PROMPT: instruction, HERMES_AGENT_MAX_TURNS: "30", HERMES_JEV_CONTROL: "1", [TURN_REPORT_ENV]: turnReportFile };

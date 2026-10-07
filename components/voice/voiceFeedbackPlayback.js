@@ -3,6 +3,60 @@ const CACHE_NAME = "hermes-voice-feedback-v1";
 const CACHE_PATH = "/__hermes_voice_feedback__/";
 const MAX_PERSISTED_CUES = 8;
 
+// Lets a ready answer take over from a short acknowledgement without cutting
+// one that is already audible. A cue that has not started is retired at once;
+// a started cue gets a bounded chance to finish while answer audio is prepared.
+export function createVoiceFeedbackHandoff({ cancelPlayback = () => {}, maxWaitMs = 4000 } = {}) {
+  let started = false;
+  let settled = false;
+  let resolveDone;
+  let waitTimer = null;
+  let waitPromise = null;
+  const done = new Promise((resolve) => { resolveDone = resolve; });
+
+  const settle = (reason) => {
+    if (settled) return false;
+    settled = true;
+    if (waitTimer !== null) clearTimeout(waitTimer);
+    waitTimer = null;
+    resolveDone(reason);
+    return true;
+  };
+
+  const cancel = () => {
+    if (!settle("cancelled")) return false;
+    try { cancelPlayback(); } catch { /* cancellation must always settle */ }
+    return true;
+  };
+
+  return {
+    get started() { return started; },
+    done,
+    markStarted() {
+      if (settled) return false;
+      started = true;
+      return true;
+    },
+    finish() { return settle("finished"); },
+    cancel,
+    retire() {
+      if (started) return false;
+      if (!settle("retired")) return false;
+      try { cancelPlayback(); } catch { /* stale preparation is best effort */ }
+      return true;
+    },
+    wait() {
+      if (!started) return Promise.resolve("not-started");
+      if (settled) return done;
+      if (!waitPromise) {
+        waitPromise = done;
+        waitTimer = setTimeout(cancel, Math.max(0, Number(maxWaitMs) || 0));
+      }
+      return waitPromise;
+    },
+  };
+}
+
 // Preparation never plays audio. The caller gates playback on accepted work,
 // and owns cancellation if the request fails, finishes quickly, or is stopped.
 export function prepareVoiceFeedbackAudio({ phrase, signature, cache, fetcher = globalThis.fetch, minBytes = 256 }) {

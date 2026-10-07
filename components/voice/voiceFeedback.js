@@ -41,3 +41,32 @@ export function selectProgressVoiceFeedback(statusLabel) {
   ]);
   return safe.get(label) || null;
 }
+
+// This cue requires native execution evidence. A queued tool, routing label,
+// approval prompt or elapsed timer is not evidence that an action started.
+export function isActiveToolProgress(run, callId) {
+  return Boolean(run?.state === "active" && !run.permission && run.toolProgress?.status === "in_progress" && run.toolProgress.callId && (!callId || run.toolProgress.callId === callId));
+}
+
+export function selectNativeToolVoiceFeedback(run, { textOnly = false, hasAnswer = false } = {}) {
+  if (textOnly || hasAnswer || !isActiveToolProgress(run)) return null;
+  return ({
+    execute: "The command is running.",
+    read: "I’m reading the requested information.",
+    search: "I’m searching now.",
+    fetch: "I’m fetching the information.",
+    edit: "I’m applying the edit.",
+  })[run.toolProgress.kind] || null;
+}
+
+export function createNativeToolVoiceFeedbackSelector() {
+  const claimedRuns = new Set();
+  return (run, options) => {
+    if (!run?.id || claimedRuns.has(run.id)) return null;
+    const phrase = selectNativeToolVoiceFeedback(run, options);
+    if (!phrase) return null;
+    claimedRuns.add(run.id);
+    if (claimedRuns.size > 200) claimedRuns.delete(claimedRuns.values().next().value);
+    return phrase;
+  };
+}

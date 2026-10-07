@@ -18,6 +18,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { usePathname } from "next/navigation";
 import { useReducedMotion } from "motion/react";
 import { completionRunId, isTextCompletion, voiceChatRequest } from "./voiceTransport.js";
 import { queuedVoiceReducer } from "./voiceEffects.js";
@@ -40,9 +41,11 @@ import {
   withCaptureTimeout,
 } from "./voiceCapture.js";
 import { createContinuousSpeechDetector, preloadContinuousSpeechDetector, pcm16kToWavBlob, vadFrameStatus } from "./voiceVad.js";
-import { selectEarlyVoiceFeedback, selectProgressVoiceFeedback } from "./voiceFeedback.js";
-import { canStreamVoiceFeedback, persistVoiceFeedback, playVoiceFeedbackAudio, prepareVoiceFeedbackAudio, streamVoiceFeedback } from "./voiceFeedbackPlayback.js";
+import { createNativeToolVoiceFeedbackSelector, isActiveToolProgress, selectEarlyVoiceFeedback, selectProgressVoiceFeedback } from "./voiceFeedback.js";
+import { canStreamVoiceFeedback, createVoiceFeedbackHandoff, persistVoiceFeedback, playVoiceFeedbackAudio, prepareVoiceFeedbackAudio, streamVoiceFeedback } from "./voiceFeedbackPlayback.js";
 import { createVoiceSessionId, resolveVoiceSessionId, voicePendingRunsKey } from "./voiceSession.js";
+import { createAnswerAudioTiming, createAnswerSpeechBuffer, readAnswerEvents } from "./voiceAnswerStream.js";
+import { canAcceptVoiceCapture, conversationModeForPathname, resolveTextOnlyMode, shouldSuppressVoiceOutput } from "./voiceResponseMode.js";
 
 export const VoiceContext = createContext(null);
 
@@ -183,6 +186,12 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     }
   }, [wrapper.state.transcript, wrapper.state.transcriptHydrated, runtimeStorage]);
   const reduceMotion = useReducedMotion();
+  const pathname = usePathname();
+  const conversationMode = conversationModeForPathname(pathname);
+  const conversationModeRef = useRef(conversationMode);
+  conversationModeRef.current = conversationMode;
+  const previousConversationModeRef = useRef(conversationMode);
+  const voiceInputGenerationRef = useRef(0);
   const [serverStatus, setServerStatus] = useState("checking");
   // CHAT_PENDING is optimistic. Detaching a session is safe only after the
   // server has acknowledged this exact immutable run id.
@@ -260,15 +269,22 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
   const currentTtsRef = useRef(null);
   const primedPlaybackRef = useRef(null);
   const ttsAbortRef = useRef(null);
+  const ttsPrefetchRef = useRef(null);
   const voiceFeedbackRef = useRef(null);
   const preparedVoiceFeedbackRef = useRef(null);
   const voiceStartupAtRef = useRef(0);
   const speechEndedAtRef = useRef(0);
   const finalTtsStartedAtRef = useRef(0);
+  const answerAudioTimingRef = useRef(null);
+  if (!answerAudioTimingRef.current) answerAudioTimingRef.current = createAnswerAudioTiming();
   const voiceFeedbackCacheRef = useRef(new Map());
   const voicedFeedbackKeysRef = useRef(new Set());
   const lastVoiceFeedbackAtRef = useRef(0);
   const stopVoiceFeedbackRef = useRef(null);
+  const retireVoiceFeedbackRef = useRef(null);
+  const playToolProgressRef = useRef(null);
+  const selectToolProgressRef = useRef(null);
+  if (!selectToolProgressRef.current) selectToolProgressRef.current = createNativeToolVoiceFeedbackSelector();
   const sttAbortRef = useRef(null);
   const chatAbortRef = useRef(null);
   const operationEpochRef = useRef(0);
@@ -322,6 +338,15 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
   const cancelledRunIdsRef = useRef(new Set());
   const completionWakeRef = useRef(null);
   const voicesRequestRef = useRef(null);
+  const answerStreamsRef = useRef(new Map());
+  const streamedRunsRef = useRef(new Map());
+  const startAnswerStreamRef = useRef(null);
+  const warmRuntimeRequestRef = useRef(null);
+  const [runtimeStatus, setRuntimeStatus] = useState("idle");
+  const [runtimeError, setRuntimeError] = useState("");
+  const [pendingPermission, setPendingPermission] = useState(null);
+  const [permissionSaving, setPermissionSaving] = useState(false);
+  const [permissionError, setPermissionError] = useState("");
 
   // Stable session id used by /api/voice/chat. Persisted in localStorage so
   // every voice turn from this Mac resumes the SAME Hermes session instead
@@ -433,6 +458,119 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     completionWakeRef.current?.();
   }, []);
 
+  const warmVoiceRuntime = useCallback(() => {
+    if (warmRuntimeRequestRef.current) return warmRuntimeRequestRef.current;
+    setRuntimeStatus("warming");
+    setRuntimeError("");
+    const request = runtimeFetch("/api/voice/runtime", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: sessionIdRef.current }),
+      signal: AbortSignal.timeout(60000),
+    }).then(async (response) => {
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.ready !== true) {
+        const message = result.code === "working_directory_unavailable" && typeof result.error === "string"
+          ? result.error
+          : "The voice runtime could not get ready. Sending a request will retry the connection.";
+        throw new Error(message);
+      }
+      setRuntimeStatus("ready");
+    }).catch((error) => {
+      setRuntimeStatus("error");
+      setRuntimeError(error.message || "The voice runtime could not get ready.");
+    }).finally(() => {
+      if (warmRuntimeRequestRef.current === request) warmRuntimeRequestRef.current = null;
+    });
+    warmRuntimeRequestRef.current = request;
+    return request;
+  }, [runtimeFetch]);
+
+  const observeRun = useCallback((run) => {
+    if (!run?.id || !pendingRunsRef.current.has(run.id) || cancelledRunIdsRef.current.has(run.id)) return;
+    const previous = streamedRunsRef.current.get(run.id);
+    if (previous?.updatedAt && run.updatedAt && Date.parse(previous.updatedAt) > Date.parse(run.updatedAt)) return;
+    streamedRunsRef.current.set(run.id, run);
+    const feedback = voiceFeedbackRef.current;
+    if (feedback?.runId === run.id) {
+      if (run.permission || ["error", "cancelled", "interrupted"].includes(run.state)) stopVoiceFeedbackRef.current?.();
+      else if (feedback.toolCallId && !isActiveToolProgress(run, feedback.toolCallId)) retireVoiceFeedbackRef.current?.();
+    }
+    if (run.permission) setPendingPermission({ ...run.permission, actionId: run.id });
+    else setPendingPermission((current) => current?.actionId === run.id ? null : current);
+    if (run.statusLabel) dispatch({ type: "REQUEST_PROGRESS", label: run.statusLabel });
+    playToolProgressRef.current?.(run);
+    if (["complete", "error", "cancelled", "interrupted"].includes(run.state)) completionWakeRef.current?.();
+  }, []);
+
+  const startAnswerStream = useCallback((actionId, textOnly = false) => {
+    if (answerStreamsRef.current.has(actionId) || !pendingRunsRef.current.has(actionId)) return;
+    const controller = new AbortController();
+    const buffer = createAnswerSpeechBuffer();
+    const entry = { controller, buffer, textOnly };
+    answerStreamsRef.current.set(actionId, entry);
+    const current = () => !controller.signal.aborted && answerStreamsRef.current.get(actionId) === entry && pendingRunsRef.current.has(actionId) && !cancelledRunIdsRef.current.has(actionId);
+    void (async () => {
+      let attempts = 0;
+      while (current()) {
+        try {
+          const response = await runtimeFetch(`/api/voice/runs/${encodeURIComponent(actionId)}/events?sessionId=${encodeURIComponent(sessionIdRef.current)}&after=${buffer.sequence}`, { cache: "no-store", signal: controller.signal });
+          if (!current()) { await response.body?.cancel(); break; }
+          const supported = await readAnswerEvents(response, (type, event) => {
+            if (!current()) return;
+            if (type === "run") { observeRun(event); return; }
+            if (event.runId !== actionId) return;
+            const result = buffer.accept(event);
+            if (!result) return;
+            retireVoiceFeedbackRef.current?.();
+            dispatch({ type: "STREAM_TEXT", actionId, text: result.text });
+            dispatch({
+              type: "STREAM_SPEECH_CHUNKS",
+              actionId,
+              textOnly: shouldSuppressVoiceOutput(conversationModeRef.current, textOnly),
+              chunks: result.chunks,
+            });
+          }, controller.signal);
+          if (!supported || ["complete", "error", "cancelled", "interrupted"].includes(streamedRunsRef.current.get(actionId)?.state)) break;
+          attempts = 0;
+        } catch {
+          if (!current()) break;
+        }
+        // Polling remains the durable fallback. Reconnect only reads events;
+        // it never resubmits a prompt or repeats an action.
+        const delay = Math.min(5000, 500 * 2 ** attempts++);
+        await new Promise((resolve) => {
+          const done = () => { clearTimeout(timer); controller.signal.removeEventListener("abort", done); resolve(); };
+          const timer = setTimeout(done, delay);
+          controller.signal.addEventListener("abort", done, { once: true });
+        });
+      }
+    })();
+  }, [observeRun, runtimeFetch]);
+  startAnswerStreamRef.current = startAnswerStream;
+
+  const respondToPermission = useCallback(async (optionId) => {
+    if (!pendingPermission || permissionSaving || !pendingRunsRef.current.has(pendingPermission.actionId)) return false;
+    const request = pendingPermission;
+    setPermissionSaving(true);
+    setPermissionError("");
+    try {
+      const response = await runtimeFetch("/api/voice/runtime", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: sessionIdRef.current, actionId: request.actionId, requestId: request.requestId, optionId }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok) throw new Error("The permission response could not be saved. Try again or stop the request.");
+      setPendingPermission((current) => current?.requestId === request.requestId ? null : current);
+      completionWakeRef.current?.();
+      return true;
+    } catch (error) {
+      if (pendingRunsRef.current.has(request.actionId)) setPermissionError(error.message);
+      throw error;
+    } finally {
+      setPermissionSaving(false);
+    }
+  }, [pendingPermission, permissionSaving, runtimeFetch]);
+
   useEffect(() => {
     try {
       const active = initialActiveRunRef.current;
@@ -444,10 +582,13 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
           markRunPending(entry.id, true); // restore silently after reload
           if (managedSessionRef.current && active?.id === entry.id) setAcceptedActionId(entry.id);
           dispatch({ type: "CHAT_PENDING", textOnly: true, actionId: entry.id });
+          startAnswerStreamRef.current?.(entry.id, true);
         }
       }
     } catch { /* malformed storage */ }
   }, [markRunPending]);
+
+  useEffect(() => { void warmVoiceRuntime(); }, [warmVoiceRuntime]);
 
   // ---------- microphone permission ----------
 
@@ -465,8 +606,15 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
   const acquireMediaStream = useCallback(async (constraints, epoch, signal) => {
     const mediaDevices = runtimeMediaDevices();
     if (!mediaDevices?.getUserMedia) throw new Error("Microphone unavailable");
+    const generation = voiceInputGenerationRef.current;
+    if (conversationModeRef.current === "chat") throw new DOMException("Voice capture is unavailable in Chat", "AbortError");
     const raw = Promise.resolve(mediaDevices.getUserMedia(constraints)).then((stream) => {
-      if (epoch !== operationEpochRef.current) {
+      if (epoch !== operationEpochRef.current || !canAcceptVoiceCapture({
+        startedGeneration: generation,
+        currentGeneration: voiceInputGenerationRef.current,
+        conversationMode: conversationModeRef.current,
+        signal,
+      })) {
         try { stream.getTracks().forEach((track) => track.stop()); } catch { /* noop */ }
         throw new DOMException("Cancelled", "AbortError");
       }
@@ -480,6 +628,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
 
   const requestPermission = useCallback(async () => {
     const epoch = operationEpochRef.current;
+    const generation = voiceInputGenerationRef.current;
     const signal = operationAbortRef.current.signal;
     const mediaDevices = runtimeMediaDevices();
     if (!mediaDevices?.getUserMedia) {
@@ -510,11 +659,16 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       } else {
         stream = await acquireMediaStream({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }, epoch, signal);
       }
-      if (epoch !== operationEpochRef.current) { stream.getTracks().forEach((track) => track.stop()); return; }
+      if (epoch !== operationEpochRef.current || !canAcceptVoiceCapture({
+        startedGeneration: generation,
+        currentGeneration: voiceInputGenerationRef.current,
+        conversationMode: conversationModeRef.current,
+        signal,
+      })) { stream.getTracks().forEach((track) => track.stop()); return; }
       mediaStreamRef.current = stream;
       dispatch({ type: "SET_PERMISSION", value: "granted" });
     } catch (err) {
-      if (epoch !== operationEpochRef.current) return;
+      if (epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted) return;
       if (err instanceof VoiceCaptureTimeoutError) {
         operationEpochRef.current += 1;
         pendingStreamPromiseRef.current = null;
@@ -769,7 +923,9 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
   // too and its promise is stashed so ensureMicAndVad awaits the SAME stream
   // instead of racing a second prompt. Idempotent: safe to call on every press.
   const primeAudioStack = useCallback(() => {
+    if (conversationModeRef.current === "chat") return;
     const epoch = operationEpochRef.current;
+    const generation = voiceInputGenerationRef.current;
     if (typeof window === "undefined") return;
     // (a) Create + resume the AudioContext in-gesture. This is the load-bearing
     // WebKit step: a context created/resumed inside the gesture stack starts
@@ -821,7 +977,11 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
         const raw = runtimeMediaDevices()
           .getUserMedia(constraints)
           .then((stream) => {
-            if (epoch !== operationEpochRef.current) { stream.getTracks().forEach((track) => track.stop()); throw new DOMException("Cancelled", "AbortError"); }
+            if (epoch !== operationEpochRef.current || !canAcceptVoiceCapture({
+              startedGeneration: generation,
+              currentGeneration: voiceInputGenerationRef.current,
+              conversationMode: conversationModeRef.current,
+            })) { stream.getTracks().forEach((track) => track.stop()); throw new DOMException("Cancelled", "AbortError"); }
             mediaStreamRef.current = stream;
             return stream;
           });
@@ -841,8 +1001,9 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
 
   const ensureMicAndVad = useCallback(async () => {
     const epoch = operationEpochRef.current;
+    const generation = voiceInputGenerationRef.current;
     const signal = operationAbortRef.current.signal;
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || conversationModeRef.current === "chat") return;
     if (!isLiveAudioStream(mediaStreamRef.current)) {
       mediaStreamRef.current = null;
       const pending = pendingStreamPromiseRef.current;
@@ -858,13 +1019,18 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
           const constraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, ...(deviceId ? { deviceId: { exact: deviceId } } : {}) } };
           stream = await acquireMediaStream(constraints, epoch, signal);
         }
-        if (epoch !== operationEpochRef.current) {
+        if (epoch !== operationEpochRef.current || !canAcceptVoiceCapture({
+          startedGeneration: generation,
+          currentGeneration: voiceInputGenerationRef.current,
+          conversationMode: conversationModeRef.current,
+          signal,
+        })) {
           stream?.getTracks().forEach((track) => track.stop());
           return;
         }
         mediaStreamRef.current = stream;
       } catch (err) {
-        if (epoch !== operationEpochRef.current) return;
+        if (epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted) return;
         pendingStreamPromiseRef.current = null;
         if (err instanceof VoiceCaptureTimeoutError) operationEpochRef.current += 1;
         dispatch({ type: "CAPTURE_FAILED", stage: "permission", code: err instanceof VoiceCaptureTimeoutError ? "MIC_PERMISSION_TIMEOUT" : "MIC_UNAVAILABLE", error: err instanceof VoiceCaptureTimeoutError ? "Microphone permission took too long. Check the browser prompt and retry." : (err && err.message ? err.message : String(err)), retryable: true });
@@ -873,7 +1039,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
         if (pendingStreamPromiseRef.current === pending) pendingStreamPromiseRef.current = null;
       }
     }
-    if (epoch !== operationEpochRef.current) return;
+    if (epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted) return;
     if (!wrapperRef.current.state.continuousRequested && !["starting", "capturing"].includes(wrapperRef.current.state.state)) {
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
       mediaStreamRef.current = null;
@@ -901,12 +1067,12 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       try {
         await awaitCaptureOperation(ctx.resume(), signal, 5000);
       } catch {
-        if (epoch !== operationEpochRef.current || signal.aborted) return;
+        if (epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted) return;
         dispatch({ type: "CAPTURE_FAILED", stage: "microphone", code: "AUDIO_CONTEXT_SUSPENDED", error: "The microphone audio engine stayed paused. Press Retry to start voice again.", retryable: true });
         return;
       }
     }
-    if (epoch !== operationEpochRef.current) return;
+    if (epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted) return;
     if (!analyserRef.current) {
       try {
         const source = ctx.createMediaStreamSource(mediaStreamRef.current);
@@ -924,11 +1090,12 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       try {
         await ensureContinuousSpeechDetector(epoch, signal);
       } catch (err) {
-        if (epoch !== operationEpochRef.current || err?.name === "AbortError") return;
+        if (epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted || err?.name === "AbortError") return;
         dispatch({ type: "CAPTURE_FAILED", stage: "microphone", code: "VAD_INIT_FAILED", error: "Speech detection could not start. Push to talk is still available.", retryable: true });
         return;
       }
     }
+    if (epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted) return;
     // Law 9: watch the live mic track for loss (device unplug, OS revoke) so
     // we can announce + re-acquire instead of dying silently in "listening".
     // Called through a ref to avoid a definition-order cycle with reacquireMic.
@@ -944,7 +1111,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
   // Law 9 says recovery is HERS: announce "I lost the mic, reconnecting…" and
   // re-acquire automatically.
   const reacquireMic = useCallback(async () => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || conversationModeRef.current === "chat") return;
     if (micRecoveringRef.current) return;
     micRecoveringRef.current = true;
     // Speak/show the loss so the user isn't left wondering (Law 4: never
@@ -1286,7 +1453,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
           source: "voice/stt",
         });
       }
-      dispatch({ type: "STT_OK", text: heard });
+      dispatch({ type: "STT_OK", text: heard, textOnly: resolveTextOnlyMode(false, conversationModeRef.current) });
     } catch (err) {
       if (!current() || (controller.signal.aborted && controller.signal.reason?.name !== "TimeoutError")) return;
       sttMsRef.current = Date.now() - startedAt;
@@ -1311,6 +1478,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
 
   const cleanupVoiceFeedback = useCallback((active) => {
     if (!active) return;
+    active.handoff?.finish();
     if (voiceFeedbackRef.current === active) voiceFeedbackRef.current = null;
     try { active.controller?.abort(); } catch { /* noop */ }
     if (active.timeout) clearTimeout(active.timeout);
@@ -1319,6 +1487,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       active.audio?.removeEventListener?.("ended", active.finish);
       active.audio?.removeEventListener?.("error", active.finish);
     }
+    active.audio?.removeEventListener?.("playing", active.onPlaying);
     try { active.audio?.pause(); } catch { /* noop */ }
     if (active.url) revokeOnce(active.url);
     if (currentTtsRef.current === active.audio) currentTtsRef.current = null;
@@ -1330,6 +1499,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     cleanupVoiceFeedback(voiceFeedbackRef.current);
   }, [cleanupVoiceFeedback]);
   stopVoiceFeedbackRef.current = stopVoiceFeedback;
+  retireVoiceFeedbackRef.current = () => voiceFeedbackRef.current?.handoff.retire();
 
   const prepareVoiceFeedback = useCallback((phrase) => {
     const cfg = wrapperRef.current.state.config || {};
@@ -1337,24 +1507,36 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     return prepareVoiceFeedbackAudio({ phrase, signature, cache: voiceFeedbackCacheRef.current, fetcher: runtimeFetch, minBytes: TTS_MIN_BYTES });
   }, [runtimeFetch]);
 
-  const playVoiceFeedback = useCallback(async (phrase, key, runId, expectedStatus = null, prepared = null) => {
+  const playVoiceFeedback = useCallback(async (phrase, key, runId, expectedStatus = null, prepared = null, options = {}) => {
     const cfg = wrapperRef.current.state.config || {};
     const feedbackKey = String(key || phrase || "");
     const now = Date.now();
     const view = wrapperRef.current.state;
-    if (!phrase || !runId || view.state !== "thinking" || !view.requestPending || view.actionId !== runId || cfg.autoSpeak === false || cfg.muteOutput === true || voicedFeedbackKeysRef.current.has(feedbackKey) || now - lastVoiceFeedbackAtRef.current < VOICE_FEEDBACK_THROTTLE_MS) { prepared?.controller.abort(); return; }
+    if (!phrase || !runId || shouldSuppressVoiceOutput(conversationModeRef.current) || view.state !== "thinking" || !view.requestPending || view.actionId !== runId || cfg.autoSpeak === false || cfg.muteOutput === true || voicedFeedbackKeysRef.current.has(feedbackKey) || now - lastVoiceFeedbackAtRef.current < VOICE_FEEDBACK_THROTTLE_MS || options.isCurrent && !options.isCurrent()) { prepared?.controller.abort(); return; }
     voicedFeedbackKeysRef.current.add(feedbackKey);
     while (voicedFeedbackKeysRef.current.size > 200) voicedFeedbackKeysRef.current.delete(voicedFeedbackKeysRef.current.values().next().value);
     lastVoiceFeedbackAtRef.current = now;
     stopVoiceFeedback();
     const source = prepared || prepareVoiceFeedback(phrase);
     const { controller, signature, cacheKey } = source;
-    const active = { controller, audio: null, url: null, stream: null };
+    const active = { controller, audio: null, url: null, stream: null, runId, toolCallId: options.toolCallId };
+    active.handoff = createVoiceFeedbackHandoff({ cancelPlayback: () => cleanupVoiceFeedback(active) });
     voiceFeedbackRef.current = active;
     const isCurrentFeedback = () => {
       const latest = wrapperRef.current.state;
-      return voiceFeedbackRef.current === active && latest.state === "thinking" && latest.requestPending && latest.actionId === runId && (!expectedStatus || latest.activeRequestStatus === expectedStatus);
+      const playable = voiceFeedbackRef.current === active && latest.state === "thinking" && latest.actionId === runId && latest.config.autoSpeak !== false && !latest.config.muteOutput;
+      // Once audible, finish the short phrase across normal text/tool updates.
+      // Explicit Stop, errors and permission waits still tear it down at once.
+      return playable && (active.handoff.started || (latest.requestPending && (!expectedStatus || latest.activeRequestStatus === expectedStatus) && (!options.isCurrent || options.isCurrent())));
     };
+    const announceStart = (cached = false) => publishVoiceActivity({
+      source: "voice/timing",
+      title: options.toolCallId ? "Tool progress audio started" : "Voice acknowledgement started",
+      summary: options.toolCallId
+        ? `Native tool start to progress playback: ${Date.now() - options.toolStartedAt}ms. ${phrase}`
+        : `Cue preparation to playback: ${Date.now() - source.requestedAt}ms${cached ? " (cached)" : ""}.`,
+      target: runId,
+    });
     let streamOwnsTimeout = false;
     const timeout = setTimeout(() => {
       controller.abort(new DOMException("Voice feedback timed out", "TimeoutError"));
@@ -1372,10 +1554,14 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       if (!AudioClass) { cleanupVoiceFeedback(active); return; }
       const audio = primedPlaybackRef.current || new AudioClass();
       active.audio = audio;
+      active.onPlaying = () => active.handoff.markStarted();
+      audio.addEventListener?.("playing", active.onPlaying, { once: true });
       primedPlaybackRef.current = audio;
       currentTtsRef.current = audio;
       audio.pause();
       const finish = () => {
+        active.handoff.finish();
+        audio.removeEventListener?.("playing", active.onPlaying);
         audio.removeEventListener?.("ended", finish);
         audio.removeEventListener?.("error", finish);
         try { active.stream?.cancel(); } catch { /* noop */ }
@@ -1411,7 +1597,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
             if (voiceFeedbackRef.current === active) stopVoiceFeedback();
           }).then(() => clearTimeout(timeout));
           await stream.started;
-          if (isCurrentFeedback()) publishVoiceActivity({ source: "voice/timing", title: "Voice acknowledgement started", summary: `Cue preparation to playback: ${Date.now() - source.requestedAt}ms.`, target: runId });
+          if (isCurrentFeedback()) announceStart();
           if (!isCurrentFeedback()) cleanupVoiceFeedback(active);
           return;
         }
@@ -1428,15 +1614,29 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       audio.currentTime = 0;
       audio.muted = false;
       await playVoiceFeedbackAudio(audio, isCurrentFeedback);
-      if (isCurrentFeedback()) publishVoiceActivity({ source: "voice/timing", title: "Voice acknowledgement started", summary: `Cue preparation to playback: ${Date.now() - source.requestedAt}ms${cached ? " (cached)" : ""}.`, target: runId });
+      if (isCurrentFeedback()) announceStart(Boolean(cached));
     } catch {
       if (voiceFeedbackRef.current === active) cleanupVoiceFeedback(active);
     } finally {
       if (!streamOwnsTimeout) clearTimeout(timeout);
     }
   }, [cleanupVoiceFeedback, stopVoiceFeedback, prepareVoiceFeedback, publishVoiceActivity]);
+  playToolProgressRef.current = (run) => {
+    const view = wrapperRef.current.state;
+    if (shouldSuppressVoiceOutput(conversationModeRef.current) || view.state !== "thinking" || !view.requestPending || view.actionId !== run.id || view.config.autoSpeak === false || view.config.muteOutput || Date.now() - lastVoiceFeedbackAtRef.current < VOICE_FEEDBACK_THROTTLE_MS) return;
+    const stream = answerStreamsRef.current.get(run.id);
+    const phrase = selectToolProgressRef.current(run, { textOnly: textRunIdsRef.current.has(run.id), hasAnswer: stream?.buffer.received === true });
+    if (!phrase) return;
+    const callId = run.toolProgress.callId;
+    void playVoiceFeedback(phrase, `${run.id}:tool-progress`, run.id, null, null, {
+      toolCallId: callId,
+      toolStartedAt: Date.parse(run.toolProgress.startedAt) || Date.now(),
+      isCurrent: () => isActiveToolProgress(streamedRunsRef.current.get(run.id), callId) && !answerStreamsRef.current.get(run.id)?.buffer.received,
+    });
+  };
 
   const callChat = useCallback(async (text, textOnly = false, preserveContinuous = false) => {
+    const resolvedTextOnly = resolveTextOnlyMode(textOnly, conversationModeRef.current);
     setAcceptedActionId(null);
     stopVoiceFeedback();
     const submittedAt = Date.now();
@@ -1446,14 +1646,14 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     chatAbortRef.current = controller;
     const timer = setTimeout(() => controller.abort(new DOMException("Request timed out", "TimeoutError")), 30000);
     const current = () => operationEpochRef.current === epoch && chatAbortRef.current === controller;
-    lastRequestRef.current = { kind: "chat", text, textOnly, preserveContinuous };
+    lastRequestRef.current = { kind: "chat", text, textOnly: resolvedTextOnly, preserveContinuous };
     const actionId = crypto.randomUUID();
-    markRunPending(actionId, textOnly);
-    dispatch({ type: "REQUEST_STARTED", kind: textOnly ? "text" : "voice", at: Date.now() });
-    dispatch({ type: "CHAT_PENDING", textOnly, actionId });
+    markRunPending(actionId, resolvedTextOnly);
+    dispatch({ type: "REQUEST_STARTED", kind: resolvedTextOnly ? "text" : "voice", at: Date.now() });
+    dispatch({ type: "CHAT_PENDING", textOnly: resolvedTextOnly, actionId });
     try {
       const cfg = wrapperRef.current?.state?.config || {};
-      const cue = !textOnly && cfg.autoSpeak !== false && !cfg.muteOutput && Date.now() - lastVoiceFeedbackAtRef.current >= VOICE_FEEDBACK_THROTTLE_MS ? selectEarlyVoiceFeedback(text) : null;
+      const cue = !resolvedTextOnly && !shouldSuppressVoiceOutput(conversationModeRef.current) && cfg.autoSpeak !== false && !cfg.muteOutput && Date.now() - lastVoiceFeedbackAtRef.current >= VOICE_FEEDBACK_THROTTLE_MS ? selectEarlyVoiceFeedback(text) : null;
       // Prepare only the finite, guarded acknowledgement phrase in parallel.
       // Playback still waits for server acceptance and checks this run's state.
       const prepared = cue ? prepareVoiceFeedback(cue) : null;
@@ -1465,7 +1665,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
         text,
         actionId,
         sessionId: sessionIdRef.current,
-        textOnly,
+        textOnly: resolvedTextOnly,
         sttMs: sttMsRef.current,
         history: normalizeTranscriptEntries(wrapperRef.current.state.transcript).filter((entry) => !entry.isError).slice(-30),
         signal: controller.signal,
@@ -1483,6 +1683,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
         // Registered before POST. Completion may already have arrived through
         // the durable poller; an acknowledgement must never restart that run.
         publishVoiceActivity({ source: "voice/timing", title: "Request accepted", summary: `Submission to acceptance: ${Date.now() - submittedAt}ms.`, target: actionId });
+        startAnswerStream(json.actionId, resolvedTextOnly);
         if (preparedVoiceFeedbackRef.current === prepared) preparedVoiceFeedbackRef.current = null;
         if (cue && prepared && !prepared.controller.signal.aborted) void playVoiceFeedback(cue, `${actionId}:accepted`, actionId, null, prepared);
         return;
@@ -1511,10 +1712,11 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       }
       // T-0008: JSON action/data response also runs detached — register the
       // pending run so the completion poller speaks the real reply.
-      if ((json.mode === "action" || json.mode === "data") && json.actionId) {
-        markRunPending(json.actionId, textOnly);
+      const pendingRun = (json.mode === "action" || json.mode === "data") && Boolean(json.actionId);
+      if (pendingRun) {
+        markRunPending(json.actionId, resolvedTextOnly);
       }
-      dispatch({ type: "CHAT_OK", response: json.response, textOnly, preserveContinuous });
+      dispatch({ type: "CHAT_OK", response: json.response, textOnly: resolveTextOnlyMode(resolvedTextOnly, conversationModeRef.current), preserveContinuous, pendingRun });
     } catch (err) {
       stopVoiceFeedback();
       if (!current() || (controller.signal.aborted && controller.signal.reason?.name !== "TimeoutError")) return;
@@ -1535,12 +1737,16 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       clearTimeout(timer);
       if (chatAbortRef.current === controller) chatAbortRef.current = null;
     }
-  }, [publishVoiceActivity, markRunPending, playVoiceFeedback, stopVoiceFeedback, prepareVoiceFeedback]);
+  }, [publishVoiceActivity, markRunPending, playVoiceFeedback, stopVoiceFeedback, prepareVoiceFeedback, startAnswerStream]);
 
   const callTTS = useCallback(async (text) => {
-    stopVoiceFeedback();
+    retireVoiceFeedbackRef.current?.();
     finalTtsStartedAtRef.current = Date.now();
     const epoch = operationEpochRef.current;
+    if (shouldSuppressVoiceOutput(conversationModeRef.current)) {
+      dispatch({ type: "TTS_PLAYBACK_ENDED" });
+      return;
+    }
     if (wrapperRef.current.state.config.autoSpeak === false || wrapperRef.current.state.config.muteOutput) {
       dispatch({ type: "TTS_PLAYBACK_ENDED" });
       return;
@@ -1553,14 +1759,17 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
         /* noop */
       }
     }
-    const ctrl = new AbortController();
+    const prefetched = ttsPrefetchRef.current?.text === text ? ttsPrefetchRef.current : null;
+    if (prefetched) ttsPrefetchRef.current = null;
+    const ctrl = prefetched?.controller || new AbortController();
     ttsAbortRef.current = ctrl;
     const timer = setTimeout(
       () => ctrl.abort(new DOMException("timeout", "TimeoutError")),
       TTS_TIMEOUT_MS
     );
     try {
-      const res = await runtimeFetch("/api/voice/tts", {
+      const preparedResponse = prefetched ? await prefetched.promise : null;
+      const res = preparedResponse || await runtimeFetch("/api/voice/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: spokenExcerpt(text) }),
@@ -1596,6 +1805,8 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
         backend.includes("stream");
 
       if (canStream) {
+        await voiceFeedbackRef.current?.handoff.wait();
+        if (epoch !== operationEpochRef.current || ttsAbortRef.current !== ctrl) { try { await res.body?.cancel(); } catch {} return; }
         // Barge-in race: the user may have started speaking before bytes
         // arrived. Cancel silently — no URL was created.
         if (wrapperRef.current.state.state !== "thinking") {
@@ -1613,6 +1824,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
 
       // Buffered fallback (edge-tts or MSE-less browser).
       const blob = await res.blob();
+      await voiceFeedbackRef.current?.handoff.wait();
       if (epoch !== operationEpochRef.current || ttsAbortRef.current !== ctrl) return;
       if (blob.size < TTS_MIN_BYTES) {
         publishVoiceActivity({
@@ -1651,6 +1863,26 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       if (ttsAbortRef.current === ctrl) ttsAbortRef.current = null;
     }
   }, [publishVoiceActivity, stopVoiceFeedback]);
+
+  // Keep one following phrase ready while the current phrase is audible.
+  // This bounds synthesis work and avoids a network-sized pause at every
+  // sentence boundary. Stop owns and aborts this request with current audio.
+  useEffect(() => {
+    const state = wrapper.state;
+    const text = state.state === "speaking" && state.streamSpeechActive && state.config.autoSpeak !== false && !state.config.muteOutput ? state.streamSpeechQueue?.[0] : null;
+    if (!text || ttsPrefetchRef.current) return;
+    const controller = new AbortController();
+    const prepared = { text, controller, promise: null };
+    const timer = setTimeout(() => controller.abort(new DOMException("Voice prefetch timed out", "TimeoutError")), TTS_TIMEOUT_MS);
+    prepared.promise = runtimeFetch("/api/voice/tts", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: spokenExcerpt(text) }), signal: controller.signal,
+    }).then(async (response) => {
+      if (controller.signal.aborted || !response.ok) { await response.body?.cancel(); return null; }
+      return response;
+    }).catch(() => null).finally(() => clearTimeout(timer));
+    ttsPrefetchRef.current = prepared;
+  }, [wrapper.state.state, wrapper.state.streamSpeechActive, wrapper.state.streamSpeechQueue, wrapper.state.config.autoSpeak, wrapper.state.config.muteOutput, runtimeFetch]);
 
   const playAudio = useCallback((url) => {
     if (!url) return;
@@ -1802,9 +2034,10 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     let lastT = 0;
     let playbackStarted = false;
     let lastProgressAt = Date.now();
+    const timing = { runId: wrapperRef.current.state.actionId, ttsStartedAt: finalTtsStartedAtRef.current, speechEndedAt: speechEndedAtRef.current };
     const stallId = setInterval(() => {
       if (audio.currentTime !== lastT) {
-        if (!playbackStarted && finalTtsStartedAtRef.current) publishVoiceActivity({ source: "voice/timing", title: "Answer audio started", summary: `Answer TTS to observed playback: ${Date.now() - finalTtsStartedAtRef.current}ms${speechEndedAtRef.current ? `; detected speech end to answer audio: ${Date.now() - speechEndedAtRef.current}ms` : ""}.` });
+        if (!playbackStarted && timing.ttsStartedAt) publishVoiceActivity(answerAudioTimingRef.current({ ...timing, at: Date.now() }));
         playbackStarted = true;
         lastT = audio.currentTime;
         lastProgressAt = Date.now();
@@ -1873,6 +2106,8 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
   }, []);
 
   const stopAudio = useCallback(() => {
+    ttsPrefetchRef.current?.controller.abort();
+    ttsPrefetchRef.current = null;
     playbackEndedAtRef.current = performance.now();
     // Tear down the currently-playing clip's stall interval, listeners, and
     // stream reader FIRST so barge-in doesn't leave them running across the
@@ -1916,6 +2151,12 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
   const cancelRequests = useCallback(() => {
     setAcceptedActionId(null);
     stopVoiceFeedbackRef.current?.();
+    for (const stream of answerStreamsRef.current.values()) stream.controller.abort();
+    answerStreamsRef.current.clear();
+    streamedRunsRef.current.clear();
+    setPendingPermission(null);
+    setPermissionError("");
+    dispatch({ type: "STREAM_RESET" });
     operationEpochRef.current += 1;
     operationAbortRef.current.abort();
     operationAbortRef.current = new AbortController();
@@ -1926,6 +2167,8 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     sttAbortRef.current?.abort();
     chatAbortRef.current?.abort();
     ttsAbortRef.current?.abort();
+    ttsPrefetchRef.current?.controller.abort();
+    ttsPrefetchRef.current = null;
     sttAbortRef.current = null;
     chatAbortRef.current = null;
     ttsAbortRef.current = null;
@@ -1939,6 +2182,32 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     pendingRunsRef.current.clear();
     try { runtimeStorage()?.removeItem(pendingRunsStorageKey); } catch {}
   }, []);
+
+  const enterChatResponseMode = useCallback(() => {
+    const state = wrapperRef.current.state;
+    pttGestureRef.current.reset();
+    captureSourceRef.current = null;
+    voiceInputGenerationRef.current += 1;
+    operationAbortRef.current.abort();
+    operationAbortRef.current = new AbortController();
+    pendingStreamPromiseRef.current = null;
+    if (["starting", "capturing"].includes(state.state)) {
+      if (state.state === "capturing") latestBlobRef.current = null;
+      void stopUtteranceRecorder(true);
+    }
+    clearVadInterval();
+    stopAllTracks();
+    void closeAudioContext();
+    stopVoiceFeedbackRef.current?.();
+    stopAudio();
+    dispatch({ type: "RESPONSE_MODE_CHANGED", mode: "chat" });
+  }, [clearVadInterval, closeAudioContext, stopAllTracks, stopUtteranceRecorder, stopAudio]);
+
+  useEffect(() => {
+    const previousMode = previousConversationModeRef.current;
+    previousConversationModeRef.current = conversationMode;
+    if (conversationMode === "chat" && previousMode !== "chat") enterChatResponseMode();
+  }, [conversationMode, enterChatResponseMode]);
 
   // Tracks the last processed `effects` array reference so React 19 strict
   // mode double-mount doesn't re-execute the same imperative side-effects.
@@ -1969,12 +2238,14 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
               break;
             case "syncContinuous":
               if (fx.on) {
+                if (conversationModeRef.current === "chat") break;
                 await ensureMicAndVad();
               } else {
                 clearVadInterval();
               }
               break;
             case "startRecorder":
+              if (conversationModeRef.current === "chat") break;
               if (fx.ptt && !pttGestureRef.current.isHeld()) break;
               // Lazily ensure the mic stream + analyser exist before recording.
               // PTT mode releases these between turns to let macOS flip the
@@ -2033,7 +2304,12 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
               await callTTS(fx.text);
               break;
             case "playAudio":
-              playAudio(fx.url);
+              if (shouldSuppressVoiceOutput(conversationModeRef.current)) {
+                revokeOnce(fx.url);
+                dispatch({ type: "TTS_PLAYBACK_ENDED", url: fx.url });
+              } else {
+                playAudio(fx.url);
+              }
               break;
             case "stopAudio":
               stopAudio();
@@ -2042,6 +2318,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
               revokeOnce(fx.url);
               break;
             case "requestPermission":
+              if (conversationModeRef.current === "chat") break;
               await requestPermission();
               break;
             case "emitActivity":
@@ -2151,6 +2428,10 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       let alive = false;
       for (const [id, at] of pendingRunsRef.current) {
         if (now - at > COMPLETION_PENDING_TTL_MS) {
+          answerStreamsRef.current.get(id)?.controller.abort();
+          answerStreamsRef.current.delete(id);
+          streamedRunsRef.current.delete(id);
+          setPendingPermission((current) => current?.actionId === id ? null : current);
           pendingRunsRef.current.delete(id);
           dispatch({ type: "SPEAK_COMPLETION", actionId: id, textOnly: true, isError: true, text: "Hermes could not confirm this request’s completion. Check Activity before retrying.", entryId: `completion-${id}:timeout` });
           try { runtimeStorage()?.setItem(pendingRunsStorageKey, JSON.stringify([...pendingRunsRef.current].map(([id, at]) => ({ id, at, textOnly: textRunIdsRef.current.has(id) })))); } catch {}
@@ -2168,13 +2449,16 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       try {
         const pending = [...pendingRunsRef.current.keys()];
         const results = await Promise.allSettled(pending.map(async (actionId) => {
-          const res = await runtimeFetch(`/api/voice/runs?sessionId=${encodeURIComponent(sid)}&actionId=${encodeURIComponent(actionId)}`, { cache: "no-store", signal: AbortSignal.timeout(10000) });
-          const { run } = await res.json();
+          const streamed = streamedRunsRef.current.get(actionId);
+          const terminal = streamed && ["complete", "error", "cancelled", "interrupted"].includes(streamed.state);
+          const res = terminal ? { ok: true, status: 200 } : await runtimeFetch(`/api/voice/runs?sessionId=${encodeURIComponent(sid)}&actionId=${encodeURIComponent(actionId)}`, { cache: "no-store", signal: AbortSignal.timeout(10000) });
+          const run = terminal ? streamed : (await res.json()).run;
           if (stopped || !pendingRunsRef.current.has(actionId)) return null;
           if (!run && (res.ok || res.status === 404) && Date.now() - pendingRunsRef.current.get(actionId) > 30000) {
             return { id: `${actionId}:failed`, source: "voice/action", sessionId: sid, state: "error", summary: "Hermes could not find this request. Check Activity before sending it again.", updatedAt: new Date().toISOString(), textOnly: true };
           }
           if (!res.ok || !run) return null;
+          observeRun(run);
           if (!["complete", "error", "cancelled", "interrupted"].includes(run.state)) {
             if (run.statusLabel) {
               dispatch({ type: "REQUEST_PROGRESS", label: run.statusLabel });
@@ -2203,9 +2487,10 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
           sessionId: sid,
         });
         if (next) {
-          stopVoiceFeedbackRef.current?.();
+          if (next.state === "error") stopVoiceFeedbackRef.current?.();
+          else retireVoiceFeedbackRef.current?.();
           const currentState = wrapperRef.current.state.state;
-          const textOnly = isTextCompletion(next, textRunIdsRef.current);
+          const textOnly = shouldSuppressVoiceOutput(conversationModeRef.current, isTextCompletion(next, textRunIdsRef.current));
           if (textOnly || (wrapperRef.current.state.requestPending && wrapperRef.current.state.actionId === completionRunId(next)) || canSpeakCompletionNow(currentState)) {
             // Handled: mark spoken (whether it speaks or is skipped for
             // autoSpeak/mute — both are terminal in the reducer) and clear its
@@ -2221,15 +2506,30 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
               if (oldest !== undefined) spokenCompletionIdsRef.current.delete(oldest);
             }
             const runId = completionRunId(next);
+            const stream = answerStreamsRef.current.get(runId);
+            const streamHandled = Boolean(stream?.buffer.received);
+            if (streamHandled && next.state !== "error") {
+              dispatch({
+                type: "STREAM_SPEECH_CHUNKS",
+                actionId: runId,
+                textOnly: shouldSuppressVoiceOutput(conversationModeRef.current, textOnly),
+                chunks: stream.buffer.finish(next.summary),
+              });
+            }
+            stream?.controller.abort();
+            answerStreamsRef.current.delete(runId);
+            streamedRunsRef.current.delete(runId);
+            setPendingPermission((current) => current?.actionId === runId ? null : current);
             pendingRunsRef.current.delete(runId);
             try { runtimeStorage()?.setItem(pendingRunsStorageKey, JSON.stringify([...pendingRunsRef.current].map(([id, at]) => ({ id, at, textOnly: textRunIdsRef.current.has(id) })))); } catch {}
             dispatch({
               type: "SPEAK_COMPLETION",
               text: next.summary,
               entryId: `completion-${next.id}`,
-              textOnly,
+              textOnly: shouldSuppressVoiceOutput(conversationModeRef.current, textOnly),
               isError: next.state === "error",
               actionId: runId,
+              streamHandled,
             });
           }
           // else: HOLD — leave it unspoken and retry on the next tick.
@@ -2333,8 +2633,13 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       // React StrictMode replays effect setup after cleanup on the same refs.
       operationAbortRef.current = new AbortController();
       stopVoiceFeedbackRef.current?.();
+      for (const stream of answerStreamsRef.current.values()) stream.controller.abort();
+      answerStreamsRef.current.clear();
+      streamedRunsRef.current.clear();
       sttAbortRef.current?.abort();
       chatAbortRef.current?.abort();
+      ttsPrefetchRef.current?.controller.abort();
+      ttsPrefetchRef.current = null;
       try {
         const rec = mediaRecorderRef.current;
         if (rec && rec.state !== "inactive") {
@@ -2420,10 +2725,12 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
 
   const toggleContinuous = useCallback(
     () => {
+      if (conversationModeRef.current === "chat") return false;
       const state = wrapperRef.current.state;
       pttGestureRef.current.reset();
       if (!state.continuousRequested && ["idle", "error"].includes(state.state)) {
         primeAudioStack();
+        void warmVoiceRuntime();
         voiceStartupAtRef.current = Date.now();
         if (!runtimeRef.current?.createSpeechDetector) void preloadContinuousSpeechDetector().catch(() => {});
       }
@@ -2435,10 +2742,11 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       }
       dispatch({ type: "TOGGLE_CONTINUOUS", teardownHandled: pendingStartup, requestsCancelled });
     },
-    [cancelRequests, clearVadInterval, closeAudioContext, primeAudioStack, stopAllTracks]
+    [cancelRequests, clearVadInterval, closeAudioContext, primeAudioStack, stopAllTracks, warmVoiceRuntime]
   );
   toggleContinuousRef.current = toggleContinuous;
   const startPushToTalk = useCallback(() => {
+    if (conversationModeRef.current === "chat") return false;
     const state = wrapperRef.current.state;
     if (!pttGestureRef.current.begin(state)) return false;
     if (state.state === "speaking") {
@@ -2448,11 +2756,16 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     // Keep WebKit activation inside the accepted press, including callers
     // that do not separately know about audio-stack priming.
     primeAudioStack();
+    void warmVoiceRuntime();
     captureSourceRef.current = "ptt";
     dispatch({ type: "START_PTT" });
     return true;
-  }, [cancelRequests, primeAudioStack, stopAudio]);
+  }, [cancelRequests, primeAudioStack, stopAudio, warmVoiceRuntime]);
   const finishPushToTalk = useCallback((discard = false) => {
+    if (conversationModeRef.current === "chat") {
+      pttGestureRef.current.reset();
+      return false;
+    }
     const state = wrapperRef.current.state;
     const pendingStartup = !mediaRecorderRef.current || mediaRecorderRef.current.state === "inactive";
     if (!pttGestureRef.current.finish({ startup: pendingStartup })) return false;
@@ -2472,7 +2785,11 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
   const stopPushToTalk = useCallback(() => finishPushToTalk(false), [finishPushToTalk]);
   const cancelPushToTalk = useCallback(() => finishPushToTalk(true), [finishPushToTalk]);
   const retryPermission = useCallback(
-    () => dispatch({ type: "RETRY_PERMISSION" }),
+    () => {
+      if (conversationModeRef.current === "chat") return false;
+      dispatch({ type: "RETRY_PERMISSION" });
+      return true;
+    },
     []
   );
   const updateConfig = useCallback(async (partial, { persist = true } = {}) => {
@@ -2525,7 +2842,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     pttGestureRef.current.reset();
     cancelRequests();
     stopAudio();
-    dispatch({ type: "CANCEL_CURRENT" });
+    dispatch({ type: "CANCEL_CURRENT", requestsCancelled: true });
   }, [cancelRequests, stopAudio]);
   const releasePrimedAudio = useCallback(() => {
     const state = wrapperRef.current.state;
@@ -2566,6 +2883,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       // Provider-owned overrides for fields the reducer does not manage.
       serverStatus,
       acceptedActionId,
+      conversationMode,
       configSaveStatus,
       configSaveError,
       reduceMotion: !!reduceMotion,
@@ -2583,6 +2901,12 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       retryLastRequest,
       releasePrimedAudio,
       canRetry: !!wrapper.state.lastError?.retryable && !!lastRequestRef.current,
+      runtimeStatus,
+      runtimeError,
+      pendingPermission,
+      permissionSaving,
+      permissionError,
+      respondToPermission,
       openSettings,
       closeSettings,
       // Law 1: run the WebKit-gated audio-stack init synchronously in the
@@ -2598,8 +2922,15 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       wrapper.state,
       serverStatus,
       acceptedActionId,
+      conversationMode,
       configSaveStatus,
       configSaveError,
+      runtimeStatus,
+      runtimeError,
+      pendingPermission,
+      permissionSaving,
+      permissionError,
+      respondToPermission,
       reduceMotion,
       toggleContinuous,
       startPushToTalk,

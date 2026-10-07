@@ -31,7 +31,7 @@ export default function InterfaceSettings() {
           <PreferenceRow title="Avatar" description="The same companion follows you between Talk and Chat.">
             <ChoiceGroup label="Avatar" value={avatar} options={[{ value: "orb", label: "Orb" }, { value: "bloub", label: "Bloub" }]} onChange={value => { setAvatar(value); setNotice(""); }} />
           </PreferenceRow>
-          <PreferenceRow title="Color" description="A softer palette for both avatars.">
+          <PreferenceRow title="Color" description="An accent for your workspace and companion.">
             <div className="preferenceColors" role="group" aria-label="Avatar color">{Object.entries(AVATAR_PALETTES).map(([value, palette]) => <button type="button" key={value} aria-pressed={preferences.avatarColor === value} aria-label={palette.label} onClick={() => update({ avatarColor: value })}><span style={{ background: palette.color }} aria-hidden="true" /><span>{palette.label}</span></button>)}</div>
           </PreferenceRow>
           <PreferenceRow title="Motion" description="Follow your Mac’s accessibility setting, or choose the amount of motion here.">

@@ -45,7 +45,7 @@ a {
 
 code,
 pre {
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
 }
 
 .shell {
@@ -143,7 +143,7 @@ nav {
   color: #8fb2e6;
   font-size: 11px;
   font-weight: 900;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }
 
 .navItem.active {
@@ -774,7 +774,7 @@ h1 {
 }
 
 .docListItem small {
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   font-size: 11px;
 }
 
@@ -1082,7 +1082,7 @@ h1 {
   border-color: rgba(102, 164, 255, 0.28);
 }
 
-.learningCard > div {
+.learningCard > div:not(.learningMeta) {
   display: flex;
   justify-content: space-between;
   gap: 16px;
@@ -2173,7 +2173,7 @@ h1 {
   }
 
   .modelTop,
-  .learningCard > div {
+  .learningCard > div:not(.learningMeta) {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -2251,7 +2251,7 @@ h1 {
 
 .voice-statusbar-url {
   font-size: 12px;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   color: var(--muted);
   opacity: 0.7;
 }
@@ -2335,7 +2335,7 @@ h1 {
 .voice-slider-value {
   color: var(--text);
   font-weight: 600;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }
 
 .voice-slider input[type="range"] {

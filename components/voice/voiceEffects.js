@@ -8,10 +8,21 @@ export function queuedVoiceReducer(previous, event) {
   }
   const next = reducer(previous, event);
   let sequence = previous.effectSequence || 0;
-  const cancelled = ["CANCEL_CURRENT", "CANCEL_PTT"].includes(event.type) || (event.type === "STOP_PTT" && previous.state.pttRequested) || (event.type === "TOGGLE_CONTINUOUS" && (previous.state.continuousRequested || !["idle", "error"].includes(previous.state.state)));
+  const cancelled = ["CANCEL_CURRENT", "CANCEL_PTT", "STREAM_RESET", "BARGE_IN_DETECTED"].includes(event.type) || (event.type === "STOP_PTT" && previous.state.pttRequested) || (event.type === "TOGGLE_CONTINUOUS" && (previous.state.continuousRequested || !["idle", "error"].includes(previous.state.state)));
+  // Chat route changes suppress pending speech effects but retain queued work.
+  const suppressSpeech = event.type === "RESPONSE_MODE_CHANGED" && event.mode === "chat";
+  const queuedEffects = cancelled ? [] : previous.effects || [];
+  const retainedEffects = suppressSpeech ? queuedEffects.filter((effect) => !["callTTS", "playAudio"].includes(effect.kind)) : queuedEffects;
+  const revokeEffects = suppressSpeech
+    ? queuedEffects.filter((effect) => effect.kind === "playAudio" && effect.url).map((effect) => ({ kind: "revokeURL", url: effect.url }))
+    : [];
   return {
     state: next.state,
-    effects: [...(cancelled ? [] : previous.effects || []), ...next.effects.map((effect) => ({ ...effect, effectId: ++sequence }))],
+    effects: [
+      ...retainedEffects,
+      ...revokeEffects.map((effect) => ({ ...effect, effectId: ++sequence })),
+      ...next.effects.map((effect) => ({ ...effect, effectId: ++sequence })),
+    ],
     effectSequence: sequence,
   };
 }

@@ -1,36 +1,19 @@
 # Release checks
 
-Panel 0.3.0 is a macOS-first local source release candidate. Hermes is the supported agent runtime; direct LLM-only execution and native packaging are not implemented. Personal desktop installations keep their own configuration and data, separate from this source copy.
+Panel 0.4.0 is a macOS-first local source release. Hermes is required. A signed native installer and additional agent runtimes are outside this release.
 
-## Current review
+The October 6 review covers per-turn spoken/written instructions, keeping accepted work across Talk/Chat navigation, saved agent profiles, primary SOUL identity, model/workspace selection, native delegated progress, and scoped stop controls. Runtime integration was checked with Hermes `v0.21.5+2142.g085d9ee`. Run the doctor again after updating Hermes: internal contracts can change.
 
-Version 0.3.0 adds explicit push-to-talk and hands-free modes; guarded native listener teardown and microphone startup; session pin/archive/restore and folder editing; and an optional Agents panel with four concurrent requests. Session switching waits for server acceptance. Chat uses a smaller header and composer, compact message actions, and activity scoped to its own session/run. Startup and recovery states use the same visual language.
+## Reproducible checks
 
-The public app now provides named, persistent sessions; a durable scheduled task queue; a local skills/plugin inventory; compatible model discovery; and guarded voice preparation and pointer-aware Bloub. Appearance controls apply across the interface without interrupting work. Bloub reuses its SVG structure while animating and follows display refresh during pointer movement. The Models page separates saved assignments from connection and test evidence, shows connected providers first, and supports an explicit bounded model test. Legacy dashboard destinations redirect to the relevant workspace pages, and their obsolete APIs are retired.
+Run `npm test`, `npm run test:e2e`, `npm run test:smoke`, `npm run build`, and `node scripts/release/check.mjs .`. Browser checks need `npx playwright install chromium`; the profile/session/voice-mode tests were additionally exercised with WebKit. CI uses an empty local configuration and deterministic API/provider fixtures. Python ACP/identity/delegation tests in `tests/unit/panel-*.test.py` require a compatible installed Hermes runtime and are separate from the portable Node suite.
 
-Verification evidence is recorded in [the rework ledger](docs/harness-rework.md). The review covers terminal errors, session separation, task retry idempotency, cancellation, interrupted execution, and queue restart behavior. Source exports exclude local state and original repository history.
+`npm run doctor` checks local dependencies and the installed adapter contract without model requests. Source export uses an explicit allowlist and must be scanned before publication. Never distribute `.env` files, runtime data, user agent profiles, recordings, a personal app bundle, or private Git history.
 
-## Release boundaries
+## Live evidence and limits
 
-- Panel and the computer must stay running for scheduled work. Browser closure is supported; sleep/offline execution is not promised.
-- Model catalogs distinguish configured selections, available choices, and explicit test results. Catalog discovery alone is not a guarantee of inference access. Test evidence expires and resets after connection changes; native login providers use a normal Hermes conversation for testing. Local catalog reads do not refresh provider credentials.
-- The 0.3.0 production text check was accepted in 52 ms and completed correctly in 15.5 seconds, with Jev activity recorded and both messages saved. Earlier task checks took approximately 20–28 seconds. These are individual measurements; final answer time still depends on the provider and request.
-- Voice lifecycle, keyboard/pointer gestures, rapid release during startup, and permission/cancellation paths have browser fixture coverage using synthetic audio streams. Physical microphone/speaker latency and a longer natural conversation soak remain unverified. Do not describe voice as consistently instant.
-- Jev is optional and bounded. The live model-routing check selected the configured fast model at 0.99 confidence: 226 ms for Jev, 496 ms including the local bridge. This is one successful check, not a latency guarantee.
-- Concurrent sessions have independent context but share account permissions and any common working folder. The queue remains serial; four is a cap on active requests, not a sandbox guarantee.
-- Discord delivery, a second clean Mac, and a signed/notarized installer are not validated.
+An isolated real-provider probe on October 6 used DeepSeek Flash for spoken, written, and agent-list turns in the same native conversation. It returned a two-sentence plain spoken answer, a structured written answer, and a native `panel_agents` tool call. A separate saved-agent task was started through the actual Python tool and returned a completed result; status from the wrong parent conversation was rejected. The profile's SOUL, working directory, and selected model matched the native runtime.
 
-## Repeat the checks
+Those four test turns took approximately 7.1, 2.6, 3.8, and 4.3 seconds respectively. They are individual observations, not latency guarantees. The first two startup-only attempts in a fresh test Hermes home triggered native first-run packaging; the embedded launcher now disables lazy installs and resolves the installed managed interpreter while retaining dependency activation. Actual model/provider availability still depends on each user's configuration.
 
-```sh
-npm test
-npm run test:e2e
-npm run test:smoke
-npm run test:runtime  # needs the installed Hermes Python environment
-npm run build
-npm audit --omit=dev
-```
-
-CI installs Python and PyYAML for metadata tests. `npm run doctor` checks local compatibility without model requests; it does not validate provider credentials. Live checks consume provider usage and are separate from CI.
-
-Run `node scripts/release/export.mjs /new/path/Panel` to create a source-only copy. Then run `node scripts/release/check.mjs /new/path/Panel`, inspect its manifest, and compare it against locally saved credentials before publishing. Do not publish a development directory, personal built app, data folder, or private repository history. The pattern scanner alone cannot prove that every form of private data is absent.
+Physical microphone/speaker latency and a prolonged hands-free conversation were not verified by these probes. Neither Discord delivery nor a clean installation on a second Mac was tested. These limits prevent a claim that every provider or voice setup works without errors. Transcript persistence, interruption handling, and browser microphone lifecycle tests are separate from audible end-to-end validation.

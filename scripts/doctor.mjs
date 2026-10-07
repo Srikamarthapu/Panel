@@ -23,30 +23,14 @@ const native = spawnSync(python, ["scripts/voice/install-hermes-early-turn-resul
 check("Native turn-report support", native.status === 0, "Update Hermes; this version cannot provide Panel's early completion receipt.");
 const command = spawnSync(process.env.HERMES_CLI_PATH || "hermes", ["--version"], { encoding: "utf8", timeout: 8000, env: { ...process.env, PATH: `${os.homedir()}/.local/bin:${repo}/venv/bin:${process.env.PATH || ""}` } });
 check("Hermes command", command.status === 0, "Run hermes --version, or set HERMES_CLI_PATH to its executable.");
-const catalogProbe = String.raw`import re, sys
-sys.path.insert(0, sys.argv[1])
-try:
-    from hermes_cli.provider_catalog import provider_catalog
-    from hermes_cli.auth import PROVIDER_REGISTRY, resolve_api_key_provider_credentials
-    from hermes_cli.providers import get_provider, custom_provider_slug
-    from hermes_cli.models_catalog_static import _PROVIDER_MODELS
-    descriptors = provider_catalog()
-    required = ("slug", "label", "auth_type")
-    missing = sorted({field for item in descriptors for field in required if not hasattr(item, field)})
-    if missing:
-        print("Hermes provider descriptor is missing required fields: " + ", ".join(missing))
-        raise SystemExit(1)
-    print("Hermes provider registry imports and descriptor fields are compatible.")
-except ModuleNotFoundError as error:
-    name = str(getattr(error, "name", ""))
-    print("Hermes provider registry has a missing Python module: " + (name if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", name) else "unknown"))
-    raise SystemExit(1)
-except Exception as error:
-    print("Hermes provider registry check failed: " + type(error).__name__)
-    raise SystemExit(1)`;
-const catalogCompatibility = spawnSync(python, ["-c", catalogProbe, repo], { encoding: "utf8", timeout: 10_000 });
-const catalogDiagnostic = catalogCompatibility.stdout?.trim().split("\n").filter(Boolean).at(-1);
-check("Hermes model catalog compatibility", catalogCompatibility.status === 0, `${catalogDiagnostic || "Hermes provider registry could not be checked."} Repair the Hermes installation with hermes update, then rerun npm run doctor.`);
+const compatibilityProbe = spawnSync(python, ["scripts/voice/launch-panel-acp.py", "--check"], { encoding: "utf8", timeout: 30_000, env: { ...process.env, HERMES_HOME: home, HERMES_REPO: repo, HERMES_DISABLE_LAZY_INSTALLS: "1" } });
+let compatibility = {};
+try { compatibility = JSON.parse(compatibilityProbe.stdout?.trim().split("\n").filter(Boolean).at(-1) || "{}"); } catch { /* reported by the checks below */ }
+const catalogOk = compatibilityProbe.status === 0 && compatibility.catalog?.ok === true;
+check("Hermes model catalog compatibility", catalogOk, `${compatibility.catalog?.message || "Hermes provider registry could not be checked."} Repair the Hermes installation with hermes update, then rerun npm run doctor.`);
+const acpRequired = (process.env.HERMES_VOICE_TRANSPORT || "acp").trim().toLowerCase() !== "legacy";
+const acpOk = compatibilityProbe.status === 0 && compatibility.acp?.ok === true;
+check("Hermes ACP and profile identity compatibility", acpOk, `${compatibility.acp?.message || "Hermes ACP/profile support could not be checked."} Update Hermes, then rerun npm run doctor.`, acpRequired);
 check("Speech recognition", Boolean(process.env.DEEPGRAM_API_KEY), "Add DEEPGRAM_API_KEY to .env.local for voice input; Chat works without it.", false);
 let saved = {};
 try { saved = JSON.parse(fs.readFileSync(path.join(dataDirectory(), "voice-config.json"), "utf8")); } catch { /* fresh install */ }

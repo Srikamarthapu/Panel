@@ -106,7 +106,8 @@ test("session switching stays gated until the chat request is accepted, then onl
   await page.getByRole("button", { name: "Agents" }).click();
   const agents = page.getByRole("complementary", { name: "Agent sessions" });
   const newAgent = agents.getByRole("button", { name: "New agent", exact: true });
-  await expect(newAgent).toBeDisabled();
+  // Creating a profile does not switch the selected conversation or cancel it.
+  await expect(newAgent).toBeEnabled();
 
   acceptPost();
   await expect(picker).toBeEnabled();
@@ -115,11 +116,13 @@ test("session switching stays gated until the chat request is accepted, then onl
   expect(received).toMatchObject({ sessionId: "qa-alpha", text: "Keep working while I switch sessions." });
 
   await newAgent.click();
-  const newAgentDialog = page.getByRole("dialog", { name: "New agent session" });
-  await newAgentDialog.getByRole("textbox", { name: "Session name", exact: true }).fill("QA delegated review");
+  const newAgentDialog = page.getByRole("dialog", { name: "New agent", exact: true });
+  await newAgentDialog.getByRole("textbox", { name: "Agent name", exact: true }).fill("QA delegated review");
+  await newAgentDialog.getByRole("textbox", { name: "SOUL.md", exact: true }).fill("Review requested changes and report verified findings.");
   await newAgentDialog.getByRole("textbox", { name: /Working folder/ }).fill("/QA/agents/review");
-  await newAgentDialog.getByRole("button", { name: "Create agent session", exact: true }).click();
-  await expect(picker).toHaveValue("qa-new-1");
+  await newAgentDialog.getByRole("button", { name: "Create agent", exact: true }).click();
+  await expect(newAgentDialog).toBeHidden();
+  await expect(picker).toHaveValue("qa-alpha");
   expect(fixture.records.get("qa-alpha").activeRun).toMatchObject({ id: received.actionId, state: "active" });
   expect(fixture.requests.stoppedRuns).toEqual([]);
 
