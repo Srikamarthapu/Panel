@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-07T04:14:19.912Z",
+  "generatedAt": "2026-10-07T17:04:30.092457Z",
   "files": [
     {
       "path": ".env.example",
@@ -213,7 +213,7 @@
     },
     {
       "path": "app/control-center.css",
-      "sha256": "734f00f09e16bb5f902bc36424af41281c5574dc517254b500f7738036fc9aa7",
+      "sha256": "dd0bf040258966bb57b7002bab92680d7f8ffbe07d13f633cbabca2c8e4399fc",
       "bytes": 34655
     },
     {
