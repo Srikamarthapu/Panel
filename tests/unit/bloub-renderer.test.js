@@ -4,6 +4,7 @@ import { BotEngine, RAYON } from "../../components/avatar/bloub/vendor/bloub-eng
 import { createBloubRenderer, PALETTE_INK } from "../../components/avatar/bloub/bloubRenderer.js";
 import {
   BLOUB_CAPTURING_EXPRESSION,
+  BLOUB_COMPANION_ACTIVE_EXPRESSION,
   BLOUB_LISTENING_EXPRESSION,
   BLOUB_NEUTRAL_EXPRESSION,
   bloubExpressionFor,
@@ -135,6 +136,36 @@ test("inline companions keep a full body during active and attention states", ()
     assert.ok(frame.bodyPath, `${state} keeps a rendered body path`);
     assert.ok(frame.eyes.length > 0, `${state} keeps a recognizable face`);
   }
+});
+
+test("inline companion activity uses a calm face without changing hero expressions", () => {
+  for (const state of ["transcribing", "thinking", "working", "error"]) {
+    assert.equal(bloubExpressionFor(state), null, `${state} keeps the hero vendor expression`);
+    assert.equal(
+      bloubExpressionFor(state, { preserveBody: true }),
+      BLOUB_COMPANION_ACTIVE_EXPRESSION,
+      `${state} uses the moderate companion expression`,
+    );
+  }
+
+  assert.deepEqual(
+    [BLOUB_COMPANION_ACTIVE_EXPRESSION.gaze.yaw, BLOUB_COMPANION_ACTIVE_EXPRESSION.gaze.pitch],
+    [0, 0],
+  );
+  assert.ok(BLOUB_COMPANION_ACTIVE_EXPRESSION.eyes.every(({ w, h }) => w <= 0.21 && h <= 0.41));
+
+  const engine = new BotEngine(RAYON, "idle", null, BLOUB_LISTENING_EXPRESSION);
+  setBloubPresence(engine, "working", 0.6, { preserveBody: true });
+  const start = engine.sample(0.6);
+  const settled = engine.sample(1.2);
+  const oldWide = new BotEngine(RAYON, "wide").sample(1);
+  const eyeHalfWidth = (frame) => Math.abs(Number(frame.eyes[0].d.match(/^M(-?[\d.]+)/)?.[1]));
+  assert.deepEqual(start.eyes, new BotEngine(RAYON, "idle", null, BLOUB_LISTENING_EXPRESSION).sample(0.6).eyes,
+    "companion activity starts from the visible outgoing expression");
+  assert.ok(settled.bodyPath, "companion activity keeps the full body");
+  assert.equal(settled.eyes.length, 2, "companion activity settles with a recognizable face");
+  assert.ok(eyeHalfWidth(settled) < eyeHalfWidth(oldWide),
+    "the sampled companion eyes render smaller than the old vendor wide pose");
 });
 
 test("persistent renderer updates every engine state without rebuilding its SVG nodes", () => {

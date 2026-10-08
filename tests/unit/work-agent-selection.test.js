@@ -19,3 +19,16 @@ test("agent presence reports only real run state", () => {
   assert.deepEqual(workAgentPresence({ lastRun: { state: "complete", statusLabel: "Complete" } }), { label: "Last task complete", state: "idle", active: false });
   assert.deepEqual(workAgentPresence({ lastRun: { state: "failed", statusLabel: "Thinking" } }), { label: "Last task needs attention", state: "error", active: false });
 });
+
+test("agent progress uses the current action, then its actual task, without inventing progress", () => {
+  const activeRun = { state: "active", statusLabel: "Thinking through your request…", taskLabel: "Review the calendar integration" };
+  assert.equal(workAgentPresence({ activeRun }).label, "Working on: Review the calendar integration");
+  assert.equal(workAgentPresence({ activeRun: { ...activeRun, statusLabel: "Reading calendar.js" } }).label, "Reading calendar.js");
+  assert.equal(workAgentPresence({ activeRun: { ...activeRun, statusLabel: "Reading…" } }).label, "Reading · Review the calendar integration");
+  assert.equal(workAgentPresence({ activeRun: { ...activeRun, toolLabel: "Checking calendar tests" } }).label, "Checking calendar tests");
+  assert.equal(workAgentPresence({ activeRun: { ...activeRun, permissionPending: true } }).label, "Needs your attention");
+  assert.equal(workAgentPresence({ activeRun: { ...activeRun, executionCancelRequestedAt: "now" } }).label, "Stopping");
+  assert.equal(workAgentPresence({ activeRun: { ...activeRun, state: "queued", statusLabel: "Queued" } }).label, "Queued: Review the calendar integration");
+  assert.ok(workAgentPresence({ activeRun: { ...activeRun, taskLabel: "Long task ".repeat(40) } }).label.length <= 96);
+  assert.equal(workAgentPresence({ lastRun: activeRun }).label, "No active task");
+});

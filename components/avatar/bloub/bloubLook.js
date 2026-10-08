@@ -2,8 +2,12 @@
 export const BLOUB_IDLE_LOOK = Object.freeze({ yaw: 0, pitch: 0, mix: 0, spin: 0, wander: 1 });
 export const BLOUB_CENTERED_LOOK = Object.freeze({ yaw: 0, pitch: 0, mix: 1, spin: 0, wander: 0 });
 
-export function bloubLookForState(state) {
-  return state === "listening" || state === "capturing" ? BLOUB_CENTERED_LOOK : null;
+const COMPANION_CENTERED_STATES = new Set(["transcribing", "thinking", "working", "error"]);
+
+export function bloubLookForState(state, { preserveBody = false } = {}) {
+  return state === "listening" || state === "capturing" || (preserveBody && COMPANION_CENTERED_STATES.has(state))
+    ? BLOUB_CENTERED_LOOK
+    : null;
 }
 
 const MAX_SMOOTHING_DELTA = 0.064;

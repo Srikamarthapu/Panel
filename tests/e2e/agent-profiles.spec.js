@@ -129,7 +129,7 @@ test("running a saved profile leaves the main conversation selected and opens it
   expect(await page.evaluate(() => localStorage.getItem("panel.activeSession"))).toBe("atlas-session");
 });
 
-test("Talk restores only valid selected profiles and shows their real run states as Bloubs without starting work", async ({ page }) => {
+test("Talk restores only valid selected profiles and shows their real run states as Bloubs without starting work", async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.addInitScript(() => {
     localStorage.setItem("panel.selectedAgents.v1", JSON.stringify(["atlas", "missing", "forge", "atlas"]));
@@ -157,6 +157,17 @@ test("Talk restores only valid selected profiles and shows their real run states
   const atlasPresence = teammates.filter({ hasText: "Atlas" });
   await expect.poll(() => atlasPresence.locator('[data-bloub-role="body"]').evaluate(node => node.getBBox().width)).toBeGreaterThan(100);
   await expect(teammates.getByText("Checking primary sources", { exact: true })).toBeVisible();
+  await expect.poll(() => atlasPresence.locator('svg.bloubAvatar').evaluate(svg => {
+    const body = svg.querySelector('[data-bloub-role="body"]').getBBox();
+    return Math.max(...[...svg.querySelectorAll('[data-bloub-role="mask-eye"]')].map(eye => eye.getBBox().height)) / body.height;
+  })).toBeLessThan(.30);
+  const active = fixture.records.get("atlas-session").activeRun;
+  active.statusLabel = "Thinking through your request…";
+  active.taskLabel = "Review the calendar integration";
+  await expect(atlasPresence.getByText("Working on: Review the calendar integration", { exact: true })).toBeVisible({ timeout: 10000 });
+  active.statusLabel = "Reading…";
+  await expect(atlasPresence.getByText("Reading · Review the calendar integration", { exact: true })).toBeVisible({ timeout: 10000 });
+  await page.screenshot({ path: testInfo.outputPath("companion-progress.png") });
   await expect(teammates.getByText("Last task complete", { exact: true })).toBeVisible();
   await expect(page.locator(".talkWorkspace__presence > .talkWorkspace__caption")).toContainText("Ready when you are.");
   await expect.poll(() => page.evaluate(() => localStorage.getItem("panel.selectedAgents.v1"))).toBe('["atlas","forge"]');

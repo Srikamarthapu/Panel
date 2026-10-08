@@ -100,6 +100,7 @@ test("profile edits are blocked while its native session has queued or running w
   const agent = agents.createWorkAgent({ id: "busy-profile", name: "Busy", soul: "Keep the original." });
   const run = runs.createAssistantRun({ id: "busy-profile-run", sessionId: agent.sessionId, text: "Do the current task." });
   assert.equal(run.state, "queued");
+  assert.equal(agents.publicWorkAgent(agents.getWorkAgent(agent.id)).activeRun.taskLabel, "Do the current task.");
 
   assert.throws(
     () => agents.updateWorkAgent(agent.id, { name: "Changed", soul: "Replace the profile." }),

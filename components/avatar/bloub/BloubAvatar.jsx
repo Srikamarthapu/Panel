@@ -32,7 +32,7 @@ export default function BloubAvatar({
     RAYON,
     bloubStateFor(state, { preserveBody }),
     null,
-    bloubExpressionFor(state),
+    bloubExpressionFor(state, { preserveBody }),
   );
 
   useEffect(() => {
@@ -44,7 +44,7 @@ export default function BloubAvatar({
       rendererRef.current = createBloubRenderer(svg, uid, colorRef.current);
     }
     const renderer = rendererRef.current;
-    const stateLook = bloubLookForState(state);
+    const stateLook = bloubLookForState(state, { preserveBody });
     setBloubPresence(engine, state, clockRef.current, { preserveBody });
     engine.setLook(stateLook, clockRef.current, 0.2);
 

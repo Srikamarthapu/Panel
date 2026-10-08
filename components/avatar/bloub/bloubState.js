@@ -15,18 +15,18 @@ const BLOUB_STATE = Object.freeze({
   offline: "idle",
 });
 
-// Small companion Bloubs must keep a recognizable body. The upstream
-// `thinking` pose intentionally turns the entire body into a three-dot glyph;
-// at inline size that reads as a missing avatar beside an intact status bubble.
+// Small companion Bloubs must keep a recognizable body and a base face that
+// can render the companion expression. The vendor wide/notify poses bypass
+// custom expressions, while idle retains the full silhouette and face.
 const PERSISTENT_BODY_STATE = Object.freeze({
   starting: "swirl",
   listening: "idle",
   capturing: "idle",
-  transcribing: "wide",
-  thinking: "wide",
-  working: "wide",
+  transcribing: "idle",
+  thinking: "idle",
+  working: "idle",
   speaking: "play",
-  error: "notify",
+  error: "idle",
   offline: "idle",
   idle: "idle",
 });
@@ -69,7 +69,18 @@ export const BLOUB_CAPTURING_EXPRESSION = expression("panel-capturing", {
   roll: 2,
 });
 
-export function bloubExpressionFor(presenceState) {
+// Inline companions keep the animated vendor bodies for active states, but use
+// one calm face instead of the exaggerated wide/notification eyes.
+export const BLOUB_COMPANION_ACTIVE_EXPRESSION = expression("panel-companion-active", {
+  split: 15.8,
+  width: 0.205,
+  height: 0.41,
+});
+
+const COMPANION_ACTIVE_STATES = new Set(["transcribing", "thinking", "working", "error"]);
+
+export function bloubExpressionFor(presenceState, { preserveBody = false } = {}) {
+  if (preserveBody && COMPANION_ACTIVE_STATES.has(presenceState)) return BLOUB_COMPANION_ACTIVE_EXPRESSION;
   if (presenceState === "listening") return BLOUB_LISTENING_EXPRESSION;
   if (presenceState === "capturing") return BLOUB_CAPTURING_EXPRESSION;
   if (presenceState === "idle" || presenceState === "offline") return BLOUB_NEUTRAL_EXPRESSION;
@@ -83,6 +94,6 @@ export function bloubExpressionFor(presenceState) {
  */
 export function setBloubPresence(engine, presenceState, now, { preserveBody = false } = {}) {
   engine.setState(bloubStateFor(presenceState, { preserveBody }), now);
-  const expression = bloubExpressionFor(presenceState);
+  const expression = bloubExpressionFor(presenceState, { preserveBody });
   if (expression) engine.setExpression(expression, now);
 }

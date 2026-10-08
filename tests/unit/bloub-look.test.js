@@ -90,6 +90,14 @@ test("listening and capturing replace stale pointer gaze with a centered target"
   assert.ok(Math.abs(centered.y - directCenter.y) < 0.01);
 });
 
+test("active companions center their gaze while hero activity keeps its vendor look", () => {
+  for (const state of ["transcribing", "thinking", "working", "error"]) {
+    assert.equal(bloubLookForState(state), null, `${state} keeps the hero look`);
+    assert.equal(bloubLookForState(state, { preserveBody: true }), BLOUB_CENTERED_LOOK);
+  }
+  assert.equal(bloubLookForState("idle", { preserveBody: true }), null, "companion idle cursor behavior is unchanged");
+});
+
 test("sampled SVG eye centers move right and down toward the pointer", () => {
   const center = sampleLook(pointerAt(500, 300));
   const right = sampleLook(pointerAt(700, 300));
