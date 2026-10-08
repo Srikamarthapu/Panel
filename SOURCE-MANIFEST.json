@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-08T03:58:20.562Z",
+  "generatedAt": "2026-10-08T04:04:19.170Z",
   "files": [
     {
       "path": ".env.example",
@@ -1368,7 +1368,7 @@
     },
     {
       "path": "tests/e2e/agents-workspace.spec.js",
-      "sha256": "eca13c05bd3929294898a8267c9743063ab42aae3d6b57860596af755553dd36",
+      "sha256": "2fc64cfa47534b0bce4776626f3ba72fe2353763fe3ec1115200032b2639e47c",
       "bytes": 6086
     },
     {

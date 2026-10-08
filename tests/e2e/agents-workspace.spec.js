@@ -42,13 +42,13 @@ test("Agents page presents reported totals, honest unavailable metrics, and sepa
   await expect(atlas.getByText("12.4K", { exact: true })).toBeVisible();
   await expect(atlas.getByText("$1.25", { exact: true })).toBeVisible();
   await expect(forge.getByText("Not reported", { exact: true })).toHaveCount(3);
-  await expect(atlas.getByText("Panel does not fill missing totals.", { exact: false })).toBeVisible();
+  await expect(atlas.getByText("may differ from your provider bill.", { exact: false })).toBeVisible();
 
   const nextAgentPoll = page.waitForResponse(response => response.request().method() === "GET" && response.url().includes("/api/agents?archived=true"));
   await atlas.getByRole("button", { name: "Hide details for Atlas" }).click();
   await nextAgentPoll;
   await expect(atlas.getByRole("button", { name: "Show details for Atlas" })).toHaveAttribute("aria-expanded", "false");
-  await expect(atlas.getByText("Panel does not fill missing totals.", { exact: false })).toBeHidden();
+  await expect(atlas.getByText("may differ from your provider bill.", { exact: false })).toBeHidden();
   await atlas.getByRole("button", { name: "Show details for Atlas" }).click();
   await expect(atlas.getByRole("button", { name: "Hide details for Atlas" })).toHaveAttribute("aria-expanded", "true");
 
