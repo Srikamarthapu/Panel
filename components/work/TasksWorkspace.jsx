@@ -20,7 +20,13 @@ export default function TasksWorkspace() {
   const [pending, setPending] = useState(false);
   const [filter, setFilter] = useState("upcoming");
   const submission = useRef(null);
+  const availableSessions = (work?.sessions || []).filter(session => !session.archivedAt);
   const refresh = async () => { const next = await workRequest("/api/tasks"); setData(next); setError(""); setLoading(false); };
+  useEffect(() => {
+    setSessionId(current => availableSessions.some(session => session.id === current)
+      ? current
+      : availableSessions.find(session => session.id === work?.activeSession?.id)?.id || availableSessions[0]?.id || "");
+  }, [work?.activeSession?.id, work?.sessions]);
   useEffect(() => {
     let stopped = false, timer;
     async function poll() {
@@ -58,8 +64,8 @@ export default function TasksWorkspace() {
     {error && <p className="workError" role="alert">{error}</p>}
     {creating && <form className="workForm" onSubmit={enqueue}>
       <label>What should your agent do?<textarea autoFocus required value={prompt} onChange={event => setPrompt(event.target.value)} maxLength={MAX_USER_TEXT} rows={4} placeholder="Describe the outcome, relevant files, and how to check the result." /></label>
-      <div className="workForm__pair"><label>Session<select value={sessionId} onChange={event => setSessionId(event.target.value)} required>{work?.sessions.map(session => <option key={session.id} value={session.id}>{session.name}</option>)}</select></label><label>Start after <span className="workOptional">Optional · local time</span><input type="datetime-local" value={runAt} onChange={event => setRunAt(event.target.value)} /></label></div>
-      <p className="workHelp">Blank means as soon as the worker and session are free. Tasks use the session’s folder and saved model settings. Requests that need interactive permission may stop for your attention.</p>
+      <div className="workForm__pair"><label>Session<select value={sessionId} onChange={event => setSessionId(event.target.value)} required>{availableSessions.map(session => <option key={session.id} value={session.id}>{session.name}</option>)}</select></label><label>Start after <span className="workOptional">Optional · local time</span><input type="datetime-local" value={runAt} onChange={event => setRunAt(event.target.value)} /></label></div>
+      <p className="workHelp">Blank means as soon as the worker and session are free. Tasks use the session’s folder and model settings when they start. They run unattended; if one stops, review it in History and continue from its session.</p>
       <div className="workForm__actions"><button type="button" className="workButton workButton--quiet" onClick={() => setCreating(false)}>Cancel</button><button className="workButton" disabled={pending || !prompt.trim() || !sessionId}>{pending ? "Adding…" : "Add to queue"}</button></div>
     </form>}
     <div className="workTabs" aria-label="Task views"><button aria-pressed={filter === "upcoming"} onClick={() => setFilter("upcoming")}>Upcoming <span>{upcoming.length}</span></button><button aria-pressed={filter === "history"} onClick={() => setFilter("history")}>History <span>{data.tasks.length - upcoming.length}</span></button></div>

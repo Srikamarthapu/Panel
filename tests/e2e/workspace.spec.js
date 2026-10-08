@@ -200,6 +200,19 @@ test("tasks retain the requested prompt, schedule, cancellation, and result hist
   await expect(page.getByRole("heading", { name: "QA Beta", exact: true })).toBeVisible();
 });
 
+test("task form selects the restored active session on first visit", async ({ page }) => {
+  const fixture = await mockWorkspace(page, { sessions });
+  await page.addInitScript(() => localStorage.setItem("panel.activeSession", "qa-beta"));
+  await page.goto("/tasks");
+  await page.getByRole("button", { name: "Queue a task", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Session", exact: true })).toHaveValue("qa-beta");
+  await page.getByRole("textbox", { name: "What should your agent do?" }).fill("Summarize the restored session notes.");
+  await expect(page.getByRole("button", { name: "Add to queue", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Add to queue", exact: true }).click();
+  expect(fixture.requests.queuedTasks).toHaveLength(1);
+  expect(fixture.requests.queuedTasks[0]).toMatchObject({ sessionId: "qa-beta" });
+});
+
 test("Tools renders API metadata across searchable Skills, Plugins, and Runtime views", async ({ page }) => {
   await mockWorkspace(page);
   const errors = []; page.on("pageerror", error => errors.push(error.message));

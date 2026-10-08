@@ -244,3 +244,27 @@ test("profile metadata ignores supplied credentials and never stores or returns 
   assert.equal(publicProfile.provider, "provider-a");
   assert.equal(publicProfile.model, "model-a");
 });
+
+test("profile colors are allowlisted and existing profiles migrate to sage", () => {
+  const colored = agents.createWorkAgent({ id: "blue-agent", name: "Blue agent", color: "blue" });
+  assert.equal(colored.color, "blue");
+  assert.equal(agents.publicWorkAgent(agents.getWorkAgent(colored.id)).color, "blue");
+  assert.throws(() => agents.createWorkAgent({ id: "css-agent", name: "CSS agent", color: "url(javascript:alert(1))" }), /supported agent color/i);
+  assert.throws(() => agents.updateWorkAgent(colored.id, { color: "#ffffff" }), /supported agent color/i);
+
+  const configPath = path.join(store, "agents", colored.id, "agent.json");
+  const legacy = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  delete legacy.color;
+  fs.writeFileSync(configPath, JSON.stringify(legacy));
+  assert.equal(agents.getWorkAgent(colored.id).color, "sage");
+});
+
+test("public profile metadata exposes only the real storage, workspace, and SOUL paths", () => {
+  const agent = agents.createWorkAgent({ id: "paths-agent", name: "Paths agent", color: "peach" });
+  const publicProfile = agents.publicWorkAgent(agents.getWorkAgent(agent.id), { includeSoul: true });
+  assert.equal(publicProfile.storagePath, path.join(store, "agents", agent.id));
+  assert.equal(publicProfile.workspacePath, agent.workingDirectory);
+  assert.equal(publicProfile.soulPath, path.join(store, "agents", agent.id, "SOUL.md"));
+  assert.equal(publicProfile.configPath, path.join(store, "agents", agent.id, "agent.json"));
+  assert.equal(fs.readFileSync(publicProfile.soulPath, "utf8").trim(), publicProfile.soul);
+});

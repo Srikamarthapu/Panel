@@ -189,6 +189,26 @@ class PanelProfileToolTests(unittest.TestCase):
             manager._make_agent(session_id="native", cwd="/tmp")
         self.assertNotIn("panel_agents", native_build.call_args.kwargs["enabled_toolsets"])
 
+    @unittest.skipUnless(HERMES_REPO.is_dir(), "installed Hermes runtime is not present")
+    def test_planning_only_adapter_has_no_tools_or_toolsets(self):
+        agent = type("Agent", (), {
+            "model": "", "tools": ["terminal"], "valid_tool_names": {"terminal"},
+            "enabled_toolsets": ["terminal"],
+        })()
+        manager = adapter.ControlSessionManager()
+        with patch.dict(os.environ, {"PANEL_DISABLE_TOOLS": "1"}), patch.object(
+            adapter, "load_config", return_value={"agent": {}}
+        ), patch.object(adapter, "_get_platform_tools", return_value={"terminal"}), patch.object(
+            adapter, "enabled_mcp_server_names", return_value=set()
+        ), patch.object(
+            adapter, "_expand_acp_enabled_toolsets", side_effect=lambda names, _mcp: names
+        ), patch.object(adapter.SessionManager, "_make_agent", return_value=agent) as native_build:
+            result = manager._make_agent(session_id="planning", cwd="/tmp")
+        self.assertEqual(native_build.call_args.kwargs["enabled_toolsets"], [])
+        self.assertEqual(result.tools, [])
+        self.assertEqual(result.valid_tool_names, set())
+        self.assertEqual(result.enabled_toolsets, [])
+
 
 if __name__ == "__main__":
     unittest.main()

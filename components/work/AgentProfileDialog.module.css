@@ -1,0 +1,101 @@
+.select {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 9px;
+  padding: 11px 36px 11px 12px;
+  border: 1px solid var(--line-hot);
+  border-radius: 8px;
+  background: var(--bg-0);
+  color: var(--fg-1);
+  font: inherit;
+  font-size: 13px;
+}
+
+.select:focus-visible,
+.pathRow button:focus-visible,
+.pathRow code:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.paths {
+  margin-top: 24px;
+  padding-top: 19px;
+  border-top: 1px solid var(--line);
+}
+
+.paths h3 {
+  margin: 0;
+  color: var(--fg-1);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.paths > p {
+  margin: 7px 0 13px;
+  color: var(--fg-2);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.paths dl {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+}
+
+.pathRow {
+  min-width: 0;
+}
+
+.pathRow dt {
+  margin-bottom: 5px;
+  color: var(--fg-2);
+  font-size: 9px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.pathRow dd {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.pathRow code {
+  min-width: 0;
+  overflow: auto hidden;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg-0);
+  color: var(--fg-2);
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+  user-select: text;
+}
+
+.pathRow button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fg-2);
+  cursor: pointer;
+}
+
+.pathRow button:hover {
+  border-color: var(--line-hot);
+  color: var(--fg-1);
+}
+
+@media (max-width: 560px) {
+  .select { font-size: 16px; }
+}

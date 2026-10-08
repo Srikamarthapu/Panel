@@ -5,6 +5,7 @@ import Link from "next/link";
 import MissionOrb from "@/components/MissionOrb.jsx";
 import { AVATAR_PALETTES } from "@/lib/interface-preferences.js";
 import { useInterfacePreferences } from "./InterfacePreferencesProvider.jsx";
+import OnboardingReplayButton from "@/components/onboarding/OnboardingReplayButton.jsx";
 
 function ChoiceGroup({ label, value, options, onChange }) {
   return <div className="preferenceChoices" role="group" aria-label={label}>
@@ -48,6 +49,12 @@ export default function InterfaceSettings() {
           </PreferenceRow>
           <PreferenceRow title="Conversation spacing" description="Keep room between replies, or fit more of the conversation on screen.">
             <ChoiceGroup label="Conversation spacing" value={preferences.conversationSpacing} options={[{ value: "comfortable", label: "Comfortable" }, { value: "compact", label: "Compact" }]} onChange={conversationSpacing => update({ conversationSpacing })} />
+          </PreferenceRow>
+        </section>
+        <section className="preferenceSection" aria-labelledby="setup-heading">
+          <h2 id="setup-heading">Setup guide</h2>
+          <PreferenceRow title="Workspace tour" description="Review Hermes readiness, models, optional voice, and where local data is stored.">
+            <OnboardingReplayButton className="workButton workButton--quiet" />
           </PreferenceRow>
         </section>
         <footer className="preferencesFooter"><button type="button" className="workButton workButton--quiet" onClick={reset}>Reset appearance</button><span role="status">{notice || (persistent ? "Saved automatically on this device." : "Applied for this window. Local storage is unavailable.")}</span></footer>

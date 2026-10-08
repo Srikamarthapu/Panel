@@ -1,6 +1,8 @@
 // Public API fixtures: histories live here, outside the page, so a reload must
 // hydrate the server response instead of succeeding through legacy storage.
 export async function mockWorkspace(page, { sessions = [{ id: "qa-main", name: "QA session" }], tasks = [], agents = [], delegations = [] } = {}) {
+  await page.route("**/api/onboarding", route => route.fulfill({ json: { needsOnboarding: false, decision: { version: 1, outcome: "existing-user", updatedAt: "2026-10-07T00:00:00.000Z" }, existingEvidence: ["saved-sessions"], hermes: { installed: true, configured: true }, storage: { panelData: "/QA/panel-data", hermesHome: "/QA/hermes-home" } } }));
+  await page.route("**/api/workspace-tabs**", route => route.fulfill({ json: { tabs: [] } }));
   const timestamp = new Date().toISOString();
   const records = new Map(sessions.map(item => [item.id, {
     session: { workingDirectory: null, pinned: false, archivedAt: null, createdAt: timestamp, updatedAt: timestamp, ...item, messages: undefined, activeRun: undefined, lastRun: undefined },
@@ -9,8 +11,8 @@ export async function mockWorkspace(page, { sessions = [{ id: "qa-main", name: "
   }]));
   const queue = tasks.map(task => ({ createdAt: timestamp, runAt: timestamp, ...task }));
   const agentProfiles = new Map(agents.map(agent => [agent.id, {
-    provider: "", model: "", soul: "", archivedAt: null, createdAt: timestamp, updatedAt: timestamp, sessionId: `qa-agent-session-${agent.id}`,
-    workingDirectory: `/QA/agents/${agent.id}/workspace`, ...agent,
+    provider: "", model: "", color: "sage", soul: "", archivedAt: null, createdAt: timestamp, updatedAt: timestamp, sessionId: `qa-agent-session-${agent.id}`,
+    workingDirectory: `/QA/agents/${agent.id}/workspace`, storagePath: `/QA/agents/${agent.id}`, soulPath: `/QA/agents/${agent.id}/SOUL.md`, workspacePath: `/QA/agents/${agent.id}/workspace`, ...agent,
   }]));
   const delegated = delegations.map(agent => ({ ...agent }));
   const requests = { createdSessions: [], sessionPatches: [], queuedTasks: [], cancellations: [], adoptedSessions: [], stoppedRuns: [], createdAgents: [], updatedAgents: [], agentRuns: [], stoppedDelegations: [] };
@@ -94,7 +96,7 @@ export async function mockWorkspace(page, { sessions = [{ id: "qa-main", name: "
       if (previous) return route.fulfill({ status: 201, json: { agent: { ...previous, soul: previous.soul } } });
       const sessionId = `qa-agent-session-${++nextId}`;
       const workingDirectory = body.workingDirectory || `/QA/agents/${id}/workspace`;
-      const profile = { id, name: body.name, soul: body.soul || `# ${body.name}\n\nYou are ${body.name}.`, provider: body.provider || "", model: body.model || "", workingDirectory, sessionId, createdAt: timestamp, updatedAt: timestamp, archivedAt: null };
+      const profile = { id, name: body.name, color: body.color || "sage", soul: body.soul || `# ${body.name}\n\nYou are ${body.name}.`, provider: body.provider || "", model: body.model || "", workingDirectory, storagePath: `/QA/agents/${id}`, soulPath: `/QA/agents/${id}/SOUL.md`, workspacePath: workingDirectory, sessionId, createdAt: timestamp, updatedAt: timestamp, archivedAt: null };
       agentProfiles.set(id, profile);
       const session = { id: sessionId, name: body.name, workingDirectory, agentId: id, pinned: false, archivedAt: null, createdAt: timestamp, updatedAt: timestamp };
       records.set(sessionId, { session, messages: [], activeRun: null, lastRun: null });
@@ -114,7 +116,7 @@ export async function mockWorkspace(page, { sessions = [{ id: "qa-main", name: "
     if (parts.length === 3 && method === "PATCH") {
       const patch = request.postDataJSON(); requests.updatedAgents.push({ id: agent.id, patch });
       Object.assign(agent, patch, { updatedAt: new Date().toISOString() });
-      if (Object.hasOwn(patch, "workingDirectory")) agent.workingDirectory ||= `/QA/agents/${agent.id}/workspace`;
+      if (Object.hasOwn(patch, "workingDirectory")) { agent.workingDirectory ||= `/QA/agents/${agent.id}/workspace`; agent.workspacePath = agent.workingDirectory; }
       const record = records.get(agent.sessionId);
       if (record) {
         if (Object.hasOwn(patch, "name")) record.session.name = patch.name;

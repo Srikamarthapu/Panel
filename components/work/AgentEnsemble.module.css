@@ -1,0 +1,169 @@
+.ensemble {
+  --ensemble-main-size: var(--talk-orb-size);
+  width: 100%;
+  min-width: 0;
+}
+
+.stage {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) var(--ensemble-main-size) minmax(170px, 1fr);
+  align-items: center;
+  justify-items: center;
+  width: min(100%, calc(var(--ensemble-main-size) + 420px));
+  height: var(--ensemble-main-size);
+  margin-inline: auto;
+}
+
+.main {
+  position: relative;
+  width: var(--ensemble-main-size);
+  height: var(--ensemble-main-size);
+}
+
+.main :global(.talkWorkspace__orb),
+.main :global(.mcOrb[data-size="hero"]) {
+  width: var(--ensemble-main-size);
+  height: var(--ensemble-main-size);
+}
+
+.sideColumn {
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  width: 100%;
+  max-height: calc(var(--ensemble-main-size) - 12px);
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.sideAgent {
+  display: grid;
+  width: min(184px, 100%);
+  min-width: 0;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+}
+
+.sideColumn:first-child .sideAgent {
+  grid-template-columns: minmax(0, 1fr) 52px;
+  text-align: right;
+}
+
+.sideColumn:first-child .sideAvatar {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.sideColumn:first-child figcaption {
+  grid-column: 1;
+  grid-row: 1;
+  align-items: flex-end;
+}
+
+.sideAvatar,
+.sideAvatar :global(.mcOrb) {
+  width: 52px;
+  height: 52px;
+}
+
+.sideAgent figcaption {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.sideAgent strong {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--fg-1);
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sideAgent figcaption span {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--fg-2);
+  font-size: 10px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.sideAgent[data-active] figcaption span {
+  border-color: var(--line-hot);
+  color: var(--fg-1);
+}
+
+@media (max-width: 680px) {
+  .ensemble {
+    --ensemble-main-size: min(var(--talk-orb-size), calc(100vw - 160px));
+  }
+
+  .stage {
+    grid-template-columns: 62px minmax(0, var(--ensemble-main-size)) 62px;
+    width: 100%;
+  }
+
+  .sideAgent,
+  .sideColumn:first-child .sideAgent {
+    width: 62px;
+    grid-template-columns: 1fr;
+    gap: 3px;
+    text-align: center;
+  }
+
+  .sideColumn:first-child .sideAvatar,
+  .sideColumn:first-child figcaption {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .sideAgent figcaption,
+  .sideColumn:first-child figcaption {
+    align-items: center;
+  }
+
+  .sideAgent figcaption span {
+    max-width: 62px;
+  }
+
+  .sideAgent strong {
+    max-width: 62px;
+  }
+
+}
+
+@media (max-width: 430px) {
+  .sideAvatar,
+  .sideAvatar :global(.mcOrb) {
+    width: 38px;
+    height: 38px;
+  }
+
+  .sideAgent figcaption span {
+    max-width: 62px;
+    padding-inline: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sideColumn { scroll-behavior: auto; }
+}

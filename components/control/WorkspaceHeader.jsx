@@ -4,7 +4,7 @@ import { ChevronRight, Cpu, Radio } from "lucide-react";
 import { useRuntime } from "./RuntimeProvider.jsx";
 import { useWorkSessions } from "@/components/work/WorkSessionProvider.jsx";
 
-const labels = { overview: "Talk", chat: "Chat", tasks: "Tasks", sessions: "Sessions", agents: "Agents", memory: "Memory", models: "Models", voice: "Voice settings", tools: "Tools", settings: "Settings" };
+const labels = { overview: "Talk", chat: "Chat", tasks: "Tasks", sessions: "Sessions", agents: "Agents", memory: "Memory", models: "Models", voice: "Voice settings", tools: "Tools", settings: "Settings", workspace: "Workspace tab" };
 export default function WorkspaceHeader({ active }) {
   const runtime = useRuntime();
   const work = useWorkSessions();

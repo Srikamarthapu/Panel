@@ -3,7 +3,11 @@ import { mockWorkspace } from "../helpers/workspace.js";
 
 async function setup(page, { deferred = false } = {}) {
   await mockWorkspace(page);
-  const requests = { stt: 0, chat: 0 };
+  const requests = { stt: 0, chat: 0, activity: [] };
+  await page.route("**/api/voice/activity**", (route) => {
+    if (route.request().method() === "POST") requests.activity.push(route.request().postDataJSON());
+    return route.fulfill({ json: { events: [] } });
+  });
   await page.route("**/api/voice/stt", (route) => {
     requests.stt++;
     return route.fulfill({ json: { text: "Synthetic PTT test", confidence: 1 } });
@@ -15,23 +19,38 @@ async function setup(page, { deferred = false } = {}) {
   await page.addInitScript(({ deferred }) => {
     // A generated tone feeds a MediaStreamDestination only. No real input or
     // speaker is accessed; production AudioContext/MediaRecorder still run.
-    const pending = [], streams = [];
-    const fixture = { requests: 0, live: () => streams.filter((stream) => stream.getTracks().some((track) => track.readyState === "live")).length };
-    const makeStream = () => {
+    const pending = [], streams = [], contexts = [], oscillators = [];
+    const fixture = {
+      requests: 0,
+      recordedBytes: 0,
+      live: () => streams.filter((stream) => stream.getTracks().some((track) => track.readyState === "live")).length,
+    };
+    const NativeMediaRecorder = window.MediaRecorder;
+    window.MediaRecorder = class ObservedMediaRecorder extends NativeMediaRecorder {
+      constructor(...args) {
+        super(...args);
+        fixture.recordedBytes = 0;
+        this.addEventListener("dataavailable", (event) => {
+          fixture.recordedBytes += event.data.size;
+        });
+      }
+    };
+    const makeStream = async () => {
       const context = new AudioContext();
       const destination = context.createMediaStreamDestination();
       const oscillator = context.createOscillator();
       oscillator.frequency.value = 220;
       oscillator.connect(destination); oscillator.start();
-      void context.resume();
+      await context.resume();
+      contexts.push(context); oscillators.push(oscillator);
       streams.push(destination.stream);
       return destination.stream;
     };
-    fixture.resolve = (index) => pending[index]?.(makeStream());
+    fixture.resolve = async (index) => pending[index]?.(await makeStream());
     Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: {
       getUserMedia: () => {
         fixture.requests++;
-        return deferred ? new Promise((resolve) => pending.push(resolve)) : Promise.resolve(makeStream());
+        return deferred ? new Promise((resolve) => pending.push(resolve)) : makeStream();
       },
     } });
     window.__pttFixture = fixture;
@@ -46,6 +65,10 @@ async function pointerDown(page, hold) {
   const rect = await hold.boundingBox();
   await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
   await page.mouse.down();
+}
+
+async function waitForRecordedAudio(page) {
+  await expect.poll(() => page.evaluate(() => window.__pttFixture.recordedBytes)).toBeGreaterThanOrEqual(100);
 }
 
 test("choosing a voice mode never opens the microphone", async ({ page }) => {
@@ -67,6 +90,7 @@ test("pointer hold starts immediately and release sends one recorded utterance",
   await expect(dock).toHaveAttribute("data-state", "capturing");
   // Hold a real recorder long enough to exceed the minimum utterance duration.
   await page.waitForTimeout(320);
+  await waitForRecordedAudio(page);
   await page.mouse.up();
   await expect.poll(() => requests.stt).toBe(1);
   await expect.poll(() => requests.chat).toBe(1);
@@ -75,12 +99,24 @@ test("pointer hold starts immediately and release sends one recorded utterance",
   expect(await page.evaluate(() => window.__pttFixture.live())).toBe(0);
 });
 
+test("a short pointer press stays below the minimum and does not send", async ({ page }) => {
+  const { dock, hold, requests } = await setup(page);
+  await pointerDown(page, hold);
+  await expect(dock).toHaveAttribute("data-state", "capturing");
+  await page.mouse.up();
+  await expect(dock).toHaveAttribute("data-state", "idle");
+  await expect.poll(() => requests.activity.some((event) => event.title === "Utterance skipped" && event.summary?.startsWith("too short"))).toBe(true);
+  expect(requests.stt).toBe(0);
+  expect(requests.chat).toBe(0);
+});
+
 for (const key of ["Space", "Enter"]) {
   test(`${key} hold and release follows the same recording path`, async ({ page }) => {
     const { dock, hold, requests } = await setup(page);
     await hold.focus(); await page.keyboard.down(key);
     await expect(dock).toHaveAttribute("data-state", "capturing");
     await page.waitForTimeout(320);
+    await waitForRecordedAudio(page);
     await page.keyboard.up(key);
     await expect.poll(() => requests.stt).toBe(1);
     await expect(dock).toHaveAttribute("data-state", "idle");

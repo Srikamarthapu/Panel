@@ -6,6 +6,7 @@ import { useVoice } from "@/components/voice/VoiceProvider.jsx";
 import { resolveMissionOrb } from "@/lib/mission-orb-state.js";
 import BloubAvatar from "@/components/avatar/bloub/BloubAvatar.jsx";
 import { useInterfacePreferences } from "@/components/preferences/InterfacePreferencesProvider.jsx";
+import { AVATAR_PALETTES } from "@/lib/interface-preferences.js";
 
 /**
  * The upstream component is tuned to 20px and 64px canvases. At hero scale we
@@ -104,6 +105,8 @@ export default function MissionOrb({
   agentName = "Hermes",
   status,
   avatar = "orb",
+  color,
+  pointerFollowing,
 }) {
   const voice = useVoice();
   const { preferences, reducedMotion, palette } = useInterfacePreferences();
@@ -117,7 +120,7 @@ export default function MissionOrb({
   if (avatar === "bloub") {
     return (
       <div className="mcOrb mcOrb--bloub" data-size={size} data-state={visual.state} data-stale={visual.isStale || undefined}>
-        <BloubAvatar state={visual.state} label={visual.label} reducedMotion={reducedMotion} pointerFollowing={preferences.pointerFollowing} color={preferences.avatarColor} />
+        <BloubAvatar state={visual.state} label={visual.label} agentName={agentName} reducedMotion={reducedMotion} pointerFollowing={pointerFollowing ?? preferences.pointerFollowing} color={color || preferences.avatarColor} />
       </div>
     );
   }
@@ -133,7 +136,7 @@ export default function MissionOrb({
       aria-label={`${agentName || "Hermes"} orb, ${visual.label}`}
     >
       <div className="mcOrb__visual" aria-hidden="true">
-        <HeroThinkingOrb state={visual.orbState} paused={visual.paused} speed={visual.speed} reducedMotion={reducedMotion} color={palette.color} nominalSize={size === "inline" ? 20 : 64} />
+        <HeroThinkingOrb state={visual.orbState} paused={visual.paused} speed={visual.speed} reducedMotion={reducedMotion} color={AVATAR_PALETTES[color]?.color || palette.color} nominalSize={size === "inline" ? 20 : 64} />
       </div>
     </div>
   );

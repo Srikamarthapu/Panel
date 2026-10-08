@@ -10,6 +10,7 @@ import "./preferences.css";
 import "./workspace-refinement.css";
 import WorkSessionProvider from "@/components/work/WorkSessionProvider.jsx";
 import InterfacePreferencesProvider from "@/components/preferences/InterfacePreferencesProvider.jsx";
+import OnboardingGate from "@/components/onboarding/OnboardingGate.jsx";
 import { INTERFACE_PREFERENCES_KEY } from "@/lib/interface-preferences.js";
 
 export const metadata = {
@@ -26,7 +27,7 @@ export default function RootLayout({ children }) {
     <html lang="en" suppressHydrationWarning>
       <head><script dangerouslySetInnerHTML={{ __html: appearanceScript }} /></head>
       <body>
-        <InterfacePreferencesProvider><WorkSessionProvider>{children}</WorkSessionProvider></InterfacePreferencesProvider>
+        <InterfacePreferencesProvider><OnboardingGate><WorkSessionProvider>{children}</WorkSessionProvider></OnboardingGate></InterfacePreferencesProvider>
       </body>
     </html>
   );

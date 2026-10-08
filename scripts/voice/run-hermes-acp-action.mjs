@@ -96,7 +96,7 @@ async function main() {
         if (!finished && !stopped) finish({ state: "error", response: "", error: "Hermes stopped before returning a final answer. This request was not replayed; check any completed actions before retrying." });
         resolve();
       });
-      socket.write(JSON.stringify({ type: "run", id, pid: process.pid, history: payload.history || [] }) + "\n");
+      socket.write(JSON.stringify({ type: "run", id, pid: process.pid, history: payload.history || [], workspaceInstructions: payload.workspaceInstructions || "" }) + "\n");
     });
   } catch (error) {
     finish({ state: "error", response: "", error: friendlyRunError(error.message) });

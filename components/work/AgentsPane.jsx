@@ -5,7 +5,8 @@ import { ArrowUpRight, Check, CircleAlert, Plus, Square, X, Settings2 } from "lu
 import { useWorkSessions } from "./WorkSessionProvider.jsx";
 import AgentProfileDialog from "./AgentProfileDialog.jsx";
 import MissionOrb from "@/components/MissionOrb.jsx";
-import { useInterfacePreferences } from "@/components/preferences/InterfacePreferencesProvider.jsx";
+import { workAgentPresence } from "@/lib/work-agent-selection.js";
+import styles from "./AgentsPane.module.css";
 
 export function sessionRunLabel(session) {
   const run = session.activeRun || session.lastRun;
@@ -40,7 +41,6 @@ export default function AgentsPane({ onClose, standalone = false }) {
     return () => { modal?.close(); if (trigger?.isConnected) trigger.focus?.(); };
   }, [compact]);
   const Container = compact ? "dialog" : "aside";
-  const { avatar } = useInterfacePreferences();
   const [error, setError] = useState(""), [pending, setPending] = useState("");
   const profiles = (work?.agents || []).filter(agent => Boolean(agent.archivedAt) === archived);
   const sessions = (work?.sessions || []).filter(s => !s.agentId && !s.archivedAt && (s.activeRun || s.lastRun || s.id === work.activeSession?.id));
@@ -53,7 +53,7 @@ export default function AgentsPane({ onClose, standalone = false }) {
     finally { pendingRef.current = false; setPending(""); }
   }
   async function open(id) { await work.selectSession(id); router.push("/chat"); }
-  function presence(running, failed, hasRun) { return running ? <MissionOrb size="inline" avatar={avatar} voiceState="thinking" /> : failed ? <CircleAlert size={16} /> : hasRun ? <Check size={16} /> : <span className="agentsPaneCard__dot" />; }
+  function presence(running, failed, hasRun) { return running ? <MissionOrb size="inline" avatar="bloub" voiceState="thinking" pointerFollowing={false} /> : failed ? <CircleAlert size={16} /> : hasRun ? <Check size={16} /> : <span className="agentsPaneCard__dot" />; }
   return <><Container ref={container} onCancel={event => { event.preventDefault(); onClose?.(); }} className={`agentsPane${standalone ? " agentsPane--standalone" : ""}`} id="agents-pane" aria-label="Agent sessions">
     <header><div>{standalone ? <h1>Agents</h1> : <h2>Agents</h2>}<p>{activeCount ? `${activeCount} working` : "Your team, ready when you need it"}</p></div>{onClose && <button type="button" className="iconButton" aria-label="Close agents" onClick={onClose}><X size={17} /></button>}</header>
     <div className="agentsPane__actions"><button type="button" className="agentsPane__new" onClick={event => { event.currentTarget.focus(); setEditor("new"); }}><Plus size={16} />New agent</button><button type="button" className="workTextButton" aria-pressed={archived} onClick={() => setArchived(!archived)}>{archived ? "Show active" : "Archived"}</button></div>
@@ -61,8 +61,10 @@ export default function AgentsPane({ onClose, standalone = false }) {
     {!profiles.length && <div className="agentsEmpty"><p>{archived ? "No archived agents." : "Build a small team for the work you do."}</p>{!archived && <span>Each agent keeps its own SOUL.md, model, folder, and conversation. Send it a task yourself, or let Hermes delegate when its specialty fits.</span>}</div>}
     <div className="agentsPane__profiles">{profiles.map(agent => {
       const running = Boolean(agent.activeRun), run = agent.activeRun || agent.lastRun, current = agent.sessionId === work?.activeSession?.id;
-      return <article className="agentsPaneCard agentProfileCard" key={agent.id} aria-label={agent.name} data-current={current || undefined} data-running={running || undefined}>
-        <div className="agentsPaneCard__top">{presence(running, ["error", "failed", "interrupted"].includes(run?.state), Boolean(run))}<strong>{agent.name}</strong>{current && <span className="agentsPaneCard__current">Current</span>}<button type="button" className="iconButton" aria-label={`Edit ${agent.name}`} disabled={running || Boolean(pending)} onClick={event => { event.currentTarget.focus(); setEditor(agent); }}><Settings2 size={14} /></button></div>
+      const selected = work?.selectedAgentIds?.includes(agent.id);
+      const profilePresence = workAgentPresence(agent);
+      return <article className="agentsPaneCard agentProfileCard" key={agent.id} aria-label={agent.name} data-current={current || undefined} data-running={running || undefined} data-selected={selected || undefined}>
+        <div className="agentsPaneCard__top"><MissionOrb size="inline" avatar="bloub" agentName={agent.name} voiceState="idle" activity={{ state: profilePresence.state, label: profilePresence.label, isStale: false }} color={agent.color || "sage"} pointerFollowing={false} /><strong>{agent.name}</strong>{current && <span className="agentsPaneCard__current">Current</span>}{!archived && <button type="button" className={styles.presenceButton} aria-label={`${selected ? "Remove" : "Add"} ${agent.name} ${selected ? "from" : "to"} Talk`} aria-pressed={Boolean(selected)} onClick={() => work.toggleAgentPresence(agent.id)}>{selected ? <Check size={12} /> : <Plus size={12} />}<span>{selected ? "Added" : "Add"}</span></button>}<button type="button" className="iconButton" aria-label={`Edit ${agent.name}`} disabled={running || Boolean(pending)} onClick={event => { event.currentTarget.focus(); setEditor(agent); }}><Settings2 size={14} /></button></div>
         <p>{agent.description}</p><small>{agent.model || "Workspace model"}</small><small title={agent.workingDirectory}>{agent.workingDirectory?.split("/").filter(Boolean).at(-1)}</small>
         <p className="agentRunStatus" role={running ? "status" : undefined}>{sessionRunLabel(agent)}</p>
         {agent.lastResult && !running && <details className="agentResult"><summary>Latest result</summary><p>{agent.lastResult}</p></details>}

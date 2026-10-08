@@ -6,6 +6,7 @@ import RuntimeProvider from "@/components/control/RuntimeProvider.jsx";
 import StartupScreen from "./StartupScreen.jsx";
 import { normalizeTranscriptEntries } from "@/lib/publicReply.js";
 import { sessionSwitchBlocked } from "@/lib/work-session-state.js";
+import { normalizeSelectedAgentIds, parseSelectedAgentIds, WORK_AGENT_SELECTION_KEY } from "@/lib/work-agent-selection.js";
 
 const WorkSessionContext = createContext(null);
 export const useWorkSessions = () => useContext(WorkSessionContext);
@@ -28,6 +29,9 @@ function BusyBridge({ setBusy }) {
 export default function WorkSessionProvider({ children }) {
   const [sessions, setSessions] = useState([]);
   const [agents, setAgents] = useState([]);
+  const [agentsReady, setAgentsReady] = useState(false);
+  const [selectedAgentIds, setSelectedAgentIds] = useState([]);
+  const [agentSelectionLoaded, setAgentSelectionLoaded] = useState(false);
   const [delegations, setDelegations] = useState([]);
   const [agentsError, setAgentsError] = useState("");
   const [active, setActive] = useState(null);
@@ -53,7 +57,7 @@ export default function WorkSessionProvider({ children }) {
     ]);
     if (requestRevision === refreshRevision.current) {
       setSessions(data.sessions);
-      if (agentData) { setAgents(agentData.agents || []); setDelegations(agentData.delegations || []); setAgentsError(""); }
+      if (agentData) { setAgents(agentData.agents || []); setAgentsReady(true); setDelegations(agentData.delegations || []); setAgentsError(""); }
       else setAgentsError("Agent status could not refresh. Saved conversations remain available.");
       setActive(previous => {
         const session = data.sessions.find(item => item.id === previous?.session.id);
@@ -73,6 +77,20 @@ export default function WorkSessionProvider({ children }) {
     timer = setTimeout(poll, 3000);
     return () => { stopped = true; clearTimeout(timer); };
   }, [refresh]);
+  useEffect(() => {
+    try { setSelectedAgentIds(parseSelectedAgentIds(localStorage.getItem(WORK_AGENT_SELECTION_KEY))); }
+    catch { setSelectedAgentIds([]); }
+    finally { setAgentSelectionLoaded(true); }
+  }, []);
+  useEffect(() => {
+    if (!agentSelectionLoaded || !agentsReady) return;
+    setSelectedAgentIds(previous => {
+      const next = normalizeSelectedAgentIds(previous, agents);
+      if (next.length === previous.length && next.every((id, index) => id === previous[index])) return previous;
+      try { localStorage.setItem(WORK_AGENT_SELECTION_KEY, JSON.stringify(next)); } catch { /* Selection stays usable for this view. */ }
+      return next;
+    });
+  }, [agentSelectionLoaded, agentsReady, agents]);
   const boot = useCallback(async () => {
     setLoading(true); setError("");
     try {
@@ -153,6 +171,22 @@ export default function WorkSessionProvider({ children }) {
   }, [refresh]);
   const activeRuns = useMemo(() => sessions.filter(session => session.activeRun).map(session => ({ ...session.activeRun, sessionName: session.name, workingDirectory: session.workingDirectory })), [sessions]);
   const activeAgent = agents.find(agent => agent.id === active?.session?.agentId) || null;
+  const selectedAgents = useMemo(() => selectedAgentIds
+    .map(id => agents.find(agent => agent.id === id))
+    .filter(agent => agent && agent.sessionId !== active?.session?.id), [selectedAgentIds, agents, active]);
+  const toggleAgentPresence = useCallback(id => {
+    if (!agents.some(agent => agent.id === id && !agent.archivedAt)) return false;
+    setSelectedAgentIds(previous => {
+      const next = previous.includes(id) ? previous.filter(value => value !== id) : [...previous, id];
+      try { localStorage.setItem(WORK_AGENT_SELECTION_KEY, JSON.stringify(next)); } catch { /* Selection stays usable for this view. */ }
+      return next;
+    });
+    return true;
+  }, [agents]);
+  const clearAgentPresence = useCallback(() => {
+    setSelectedAgentIds([]);
+    try { localStorage.setItem(WORK_AGENT_SELECTION_KEY, "[]"); } catch { /* Selection stays usable for this view. */ }
+  }, []);
   const saveAgent = useCallback(async (input, id) => {
     const data = await workRequest(id ? `/api/agents/${id}` : "/api/agents", { method: id ? "PATCH" : "POST", body: JSON.stringify(input) });
     const list = await refresh();
@@ -170,7 +204,7 @@ export default function WorkSessionProvider({ children }) {
     const data = await workRequest("/api/agents/delegations", { method: "DELETE", body: JSON.stringify({ sessionId: agent.sessionId, runId: agent.runId, agentId: agent.id }) });
     await refresh(); return data;
   }, [refresh]);
-  const value = useMemo(() => ({ sessions, agents, delegations, agentsError, activeAgent, saveAgent, runAgent, stopDelegation, activeRuns, activeSession: active?.session, busy, loading, error, refresh, selectSession, createSession, updateSession, renameSession, pinSession, archiveSession, restoreSession, stopSessionRun }), [sessions, agents, delegations, agentsError, activeAgent, saveAgent, runAgent, stopDelegation, activeRuns, active, busy, loading, error, refresh, selectSession, createSession, updateSession, renameSession, pinSession, archiveSession, restoreSession, stopSessionRun]);
+  const value = useMemo(() => ({ sessions, agents, delegations, agentsError, activeAgent, selectedAgentIds, selectedAgents, toggleAgentPresence, clearAgentPresence, saveAgent, runAgent, stopDelegation, activeRuns, activeSession: active?.session, busy, loading, error, refresh, selectSession, createSession, updateSession, renameSession, pinSession, archiveSession, restoreSession, stopSessionRun }), [sessions, agents, delegations, agentsError, activeAgent, selectedAgentIds, selectedAgents, toggleAgentPresence, clearAgentPresence, saveAgent, runAgent, stopDelegation, activeRuns, active, busy, loading, error, refresh, selectSession, createSession, updateSession, renameSession, pinSession, archiveSession, restoreSession, stopSessionRun]);
   if (!active) return <StartupScreen loading={loading} error={error} onRetry={boot} />;
   return <WorkSessionContext.Provider value={value}>
     <VoiceProvider key={`${active.session.id}:${active.revision}`} sessionId={active.session.id} initialTranscript={active.messages || []} initialActiveRun={active.activeRun}>

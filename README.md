@@ -22,6 +22,14 @@ Open **http://127.0.0.1:3000**. The server binds only to your computer. If that 
 
 `npm run doctor` checks your local installation without contacting model providers or printing credentials. If Hermes lives elsewhere, set `HERMES_HOME`, `HERMES_REPO`, and/or `HERMES_CLI_PATH` in your shell or `.env.local`. Keep that file private. Configuring a model does not by itself prove the provider works: test a small message in Chat.
 
+## Make the workspace your own
+
+Fresh profiles get an optional setup guide. Skip it at any time and reopen it from **Settings → Replay setup guide**. It shows local runtime/model/voice readiness and the exact storage locations; it never asks you to paste credentials.
+
+Use **+ beside Workspace** to plan a custom tab with Hermes. Review the plan, try the preview, then add it to your sidebar. Tabs use native forms, tables, notes, checklists, and actions that show the exact task for approval before Hermes runs it. See [custom workspace tabs](docs/workspace-tabs.md) for capabilities and limits.
+
+Give saved agents their own colors and use **Add to Talk** to select the teammates shown beside Hermes. Selection does not start a task. Their Bloubs show actual run status; agent profiles expose the SOUL, configuration, storage, and working-folder paths.
+
 ## Add voice
 
 Text chat works without voice credentials.
@@ -50,10 +58,9 @@ Control model routing selects among the primary model and eligible same-provider
 ## Local data and safety
 
 - Your Hermes credentials remain in your own Hermes installation. Panel's optional keys live in `.env.local`, local voice settings, or Hermes's local Jev settings. None are included in the source distribution.
-- Conversation history is stored in browser local storage; run receipts and activity live under `data/`. Hermes also maintains its own sessions. Local users with filesystem access can read local state.
+- Saved conversations, agent profiles, tab state, run receipts, and activity live under `data/` (or `PANEL_DATA_DIR`). Browser storage keeps interface choices, selected teammates, and recovery drafts. Hermes also maintains its own sessions. Local users with filesystem access can read local state.
 - Keep Panel on loopback. It is a single-user local app, not a hosted multi-user service. The API rejects foreign browser origins and non-loopback hosts.
 - Stopping a request does not undo actions that already finished. Check results before retrying a write operation.
-- Optional legacy workspace views use your own Hermes data and may be empty until configured. They are not bundled sample personal data.
 
 ## Development and checks
 

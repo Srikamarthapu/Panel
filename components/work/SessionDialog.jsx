@@ -39,7 +39,7 @@ export default function SessionDialog({ session, agent = false, onClose, onSaved
     <form onSubmit={save} aria-busy={pending}>
       <label>Session name<input ref={nameInput} value={name} onChange={event => setName(event.target.value)} maxLength={120} placeholder={agent ? "e.g. Review the API" : "e.g. Website redesign"} /></label>
       <label>Working folder <span>Optional</span><input value={directory} disabled={working} onChange={event => setDirectory(event.target.value)} spellCheck={false} placeholder="/absolute/path/to/project" aria-describedby="session-folder-help" /></label>
-      <p id="session-folder-help" className="fieldHelp">{working ? "You can change the folder after this agent finishes." : "Use an existing folder, or leave blank to use Panel’s folder."}</p>
+      <p id="session-folder-help" className="fieldHelp">{working ? "You can change the folder after this agent finishes." : "Use an existing folder, or leave blank to use Panel’s folder. This sets the starting context; it does not limit tool access."}</p>
       {error && <p className="workError" role="alert">{error}</p>}
       <footer><button type="button" className="workButton workButton--quiet" disabled={pending} onClick={onClose}>Cancel</button><button className="workButton" disabled={pending}>{pending ? "Saving…" : session ? "Save changes" : agent ? "Create agent session" : "Create session"}</button></footer>
     </form>

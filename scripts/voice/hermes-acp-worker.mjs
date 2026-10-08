@@ -14,7 +14,7 @@ const repo = process.env.HERMES_REPO || path.join(os.homedir(), ".hermes", "herm
 const python = process.platform === "win32" ? path.join(repo, "venv", "Scripts", "python.exe") : path.join(repo, "venv", "bin", "python");
 const child = spawn(process.env.HERMES_ACP_COMMAND || python, process.env.HERMES_ACP_COMMAND ? [] : [path.join(spec.appRoot, "scripts/voice/launch-panel-acp.py")], {
   cwd: spec.workingDirectory || spec.appRoot, stdio: ["pipe", "pipe", "pipe"],
-  env: { ...process.env, PANEL_NODE: process.execPath, PANEL_APP_ROOT: spec.appRoot, PANEL_WORK_SESSION_ID: spec.sessionId, PANEL_DATA_DIR: spec.dataDirectory, PANEL_AGENT_SOUL: spec.agentSoul || "", PANEL_AGENT_SOUL_PATH: spec.agentId ? path.join(spec.dataDirectory, "agents", spec.agentId, "SOUL.md") : "", HERMES_REPO: repo, HERMES_DISABLE_LAZY_INSTALLS: "1", HERMES_JEV_CONTROL: "1", HERMES_AGENT_MAX_TURNS: "30", PATH: [path.join(os.homedir(), ".local", "bin"), path.join(repo, "venv", process.platform === "win32" ? "Scripts" : "bin"), "/opt/homebrew/bin", "/usr/local/bin", process.env.PATH || ""].join(path.delimiter), PANEL_ACP_MODEL: spec.model || "", PANEL_ACP_PROVIDER: spec.provider || "", PANEL_ACP_REASONING: spec.reasoningEffort || "", PANEL_ACP_INSTRUCTIONS: buildControlSystemInstructions({ agentName: spec.agentName }) },
+  env: { ...process.env, PANEL_NODE: process.execPath, PANEL_APP_ROOT: spec.appRoot, PANEL_WORK_SESSION_ID: spec.sessionId, PANEL_DATA_DIR: spec.dataDirectory, PANEL_AGENT_SOUL: spec.agentSoul || "", PANEL_AGENT_SOUL_PATH: spec.agentId ? path.join(spec.dataDirectory, "agents", spec.agentId, "SOUL.md") : "", HERMES_REPO: repo, HERMES_DISABLE_LAZY_INSTALLS: "1", HERMES_JEV_CONTROL: "1", HERMES_AGENT_MAX_TURNS: "30", PATH: [path.join(os.homedir(), ".local", "bin"), path.join(repo, "venv", process.platform === "win32" ? "Scripts" : "bin"), "/opt/homebrew/bin", "/usr/local/bin", process.env.PATH || ""].join(path.delimiter), PANEL_DISABLE_TOOLS: spec.disableTools === true ? "1" : "0", PANEL_ACP_MODEL: spec.model || "", PANEL_ACP_PROVIDER: spec.provider || "", PANEL_ACP_REASONING: spec.reasoningEffort || "", PANEL_ACP_INSTRUCTIONS: buildControlSystemInstructions({ agentName: spec.agentName }) },
 });
 let nextId = 1, sessionId = "", active = null, stdout = "", stderr = "", closed = false, lastUsed = Date.now();
 const pending = new Map();
@@ -132,7 +132,7 @@ async function execute(socket, message) {
       sessionId,
       prompt: [{ type: "text", text }],
       _meta: {
-        [ACP_TURN_INSTRUCTIONS_META_KEY]: turnInstructionsForTextOnly(run.textOnly),
+        [ACP_TURN_INSTRUCTIONS_META_KEY]: [turnInstructionsForTextOnly(run.textOnly), spec.disableTools === true && typeof message.workspaceInstructions === "string" ? message.workspaceInstructions.slice(0, 18000) : ""].filter(Boolean).join("\n\n"),
         [ACP_RUN_ID_META_KEY]: run.id,
       },
     }, Number(process.env.HERMES_VOICE_RUN_TIMEOUT_MS) || 12 * 60_000);

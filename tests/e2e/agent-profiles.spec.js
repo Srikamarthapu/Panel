@@ -6,11 +6,12 @@ function profileCard(page, name) {
   return page.getByRole("article", { name, exact: true });
 }
 
-async function createProfile(page, { name, soul, workingDirectory, provider, model }) {
+async function createProfile(page, { name, color = "sage", soul, workingDirectory, provider, model }) {
   await page.getByRole("button", { name: "New agent", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "New agent" });
   await expect(dialog).toBeVisible();
   await dialog.getByLabel("Agent name").fill(name);
+  await dialog.getByLabel("Agent color").selectOption(color);
   await dialog.getByLabel("SOUL.md").fill(soul);
   await dialog.getByLabel("Working folder").fill(workingDirectory);
   await dialog.getByLabel("Provider").fill(provider);
@@ -27,6 +28,7 @@ test("profiles save separate SOUL, folder, provider, and model; edits and archiv
 
   await createProfile(page, {
     name: "Atlas",
+    color: "blue",
     soul: "# Atlas\n\nResearch claims from primary sources and report uncertainty.",
     workingDirectory: "/QA/work/atlas",
     provider: "provider-a",
@@ -34,6 +36,7 @@ test("profiles save separate SOUL, folder, provider, and model; edits and archiv
   });
   await createProfile(page, {
     name: "Forge",
+    color: "peach",
     soul: "# Forge\n\nImplement the smallest verified change.",
     workingDirectory: "/QA/work/forge",
     provider: "provider-b",
@@ -42,8 +45,8 @@ test("profiles save separate SOUL, folder, provider, and model; edits and archiv
 
   const atlas = [...fixture.agents.values()].find(agent => agent.name === "Atlas");
   const forge = [...fixture.agents.values()].find(agent => agent.name === "Forge");
-  expect(atlas).toMatchObject({ soul: "# Atlas\n\nResearch claims from primary sources and report uncertainty.", workingDirectory: "/QA/work/atlas", provider: "provider-a", model: "model-a" });
-  expect(forge).toMatchObject({ soul: "# Forge\n\nImplement the smallest verified change.", workingDirectory: "/QA/work/forge", provider: "provider-b", model: "model-b" });
+  expect(atlas).toMatchObject({ color: "blue", soul: "# Atlas\n\nResearch claims from primary sources and report uncertainty.", workingDirectory: "/QA/work/atlas", provider: "provider-a", model: "model-a" });
+  expect(forge).toMatchObject({ color: "peach", soul: "# Forge\n\nImplement the smallest verified change.", workingDirectory: "/QA/work/forge", provider: "provider-b", model: "model-b" });
   expect(atlas.sessionId).not.toBe(forge.sessionId);
   expect(atlas.workingDirectory).not.toBe(forge.workingDirectory);
   expect(atlas.soul).not.toBe(forge.soul);
@@ -55,6 +58,10 @@ test("profiles save separate SOUL, folder, provider, and model; edits and archiv
   const edit = page.getByRole("dialog", { name: "Agent profile" });
   await expect(edit).toBeVisible();
   await expect(edit.getByLabel("SOUL.md")).toHaveValue(atlas.soul);
+  await expect(edit.getByLabel("Agent color")).toHaveValue("blue");
+  await expect(edit.getByText(`/QA/agents/${atlas.id}/SOUL.md`, { exact: true })).toBeVisible();
+  await expect(edit.getByText("/QA/work/atlas", { exact: true })).toBeVisible();
+  await edit.getByLabel("Agent color").selectOption("lilac");
   await edit.getByLabel("SOUL.md").fill("# Atlas\n\nCompare primary sources and keep a concise evidence trail.");
   await edit.getByLabel("Working folder").fill("/QA/work/atlas-revised");
   await edit.getByLabel("Provider").fill("provider-b");
@@ -62,6 +69,7 @@ test("profiles save separate SOUL, folder, provider, and model; edits and archiv
   await edit.getByRole("button", { name: "Save profile", exact: true }).click();
   await expect(edit).toHaveCount(0);
   expect(fixture.agents.get(atlas.id)).toMatchObject({
+    color: "lilac",
     soul: "# Atlas\n\nCompare primary sources and keep a concise evidence trail.",
     workingDirectory: "/QA/work/atlas-revised",
     provider: "provider-b",
@@ -73,6 +81,7 @@ test("profiles save separate SOUL, folder, provider, and model; edits and archiv
   await persisted.getByRole("button", { name: "Edit Atlas" }).click();
   const reopened = page.getByRole("dialog", { name: "Agent profile" });
   await expect(reopened.getByLabel("SOUL.md")).toHaveValue("# Atlas\n\nCompare primary sources and keep a concise evidence trail.");
+  await expect(reopened.getByLabel("Agent color")).toHaveValue("lilac");
   await expect(reopened.getByLabel("Working folder")).toHaveValue("/QA/work/atlas-revised");
   await expect(reopened.getByLabel("Provider")).toHaveValue("provider-b");
   await expect(reopened.getByLabel("Model ID")).toHaveValue("model-a-2");
@@ -118,6 +127,62 @@ test("running a saved profile leaves the main conversation selected and opens it
   await expect(page.getByRole("textbox", { name: "Message Atlas" })).toBeVisible();
   await expect(page.getByText("Atlas conversation history.", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem("panel.activeSession"))).toBe("atlas-session");
+});
+
+test("Talk restores only valid selected profiles and shows their real run states as Bloubs without starting work", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("panel.selectedAgents.v1", JSON.stringify(["atlas", "missing", "forge", "atlas"]));
+    localStorage.setItem("hermes.talk.avatar", "orb");
+  });
+  const fixture = await mockWorkspace(page, {
+    sessions: [
+      { id: "qa-main", name: "Main conversation" },
+      { id: "atlas-session", name: "Atlas", agentId: "atlas", activeRun: { id: "atlas-run", state: "active", statusLabel: "Checking primary sources" } },
+      { id: "forge-session", name: "Forge", agentId: "forge", lastRun: { id: "forge-run", state: "complete", statusLabel: "Complete" } },
+    ],
+    agents: [
+      { id: "atlas", sessionId: "atlas-session", name: "Atlas", color: "blue", soul: "Research evidence." },
+      { id: "forge", sessionId: "forge-session", name: "Forge", color: "peach", soul: "Build verified changes." },
+    ],
+  });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Talk", exact: true })).toBeVisible();
+  const teammates = page.locator(".talkWorkspace__presence figure");
+  await expect(teammates).toHaveCount(2);
+  await expect(teammates.locator(".mcOrb--bloub")).toHaveCount(2);
+  await expect(teammates.getByText("Checking primary sources", { exact: true })).toBeVisible();
+  await expect(teammates.getByText("Last task complete", { exact: true })).toBeVisible();
+  await expect(page.locator(".talkWorkspace__presence > .talkWorkspace__caption")).toContainText("Ready when you are.");
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("panel.selectedAgents.v1"))).toBe('["atlas","forge"]');
+  await page.setViewportSize({ width: 390, height: 844 });
+  const agentsToggle = page.getByRole("button", { name: "Agents", exact: true });
+  if (await agentsToggle.getAttribute("aria-expanded") === "true") await page.getByRole("button", { name: "Close agents" }).click();
+  await expect(page.locator('.talkWorkspace__presence[data-main-avatar="orb"] > .talkWorkspace__caption')).toContainText("Ready when you are.");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.getByRole("button", { name: "Bloub", exact: true }).click();
+  const bloubMain = page.locator('.talkWorkspace__presence[data-main-avatar="bloub"]');
+  await expect(bloubMain).toBeVisible();
+  await expect(bloubMain.getByRole("heading", { name: "Ready when you are.", exact: true })).toBeVisible();
+  await expect(bloubMain.locator(":scope > .talkWorkspace__caption")).toContainText("Ready when you are.");
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect(bloubMain.locator(":scope > .talkWorkspace__caption")).toBeVisible();
+
+  if (await agentsToggle.getAttribute("aria-expanded") !== "true") await agentsToggle.click();
+  const atlas = profileCard(page, "Atlas");
+  const forge = profileCard(page, "Forge");
+  await expect(atlas.getByRole("button", { name: "Remove Atlas from Talk" })).toHaveAttribute("aria-pressed", "true");
+  await forge.getByRole("button", { name: "Remove Forge from Talk" }).click();
+  await expect(teammates).toHaveCount(1);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("panel.selectedAgents.v1"))).toBe('["atlas"]');
+  expect(fixture.requests.agentRuns).toEqual([]);
+
+  await forge.getByRole("button", { name: "Add Forge to Talk" }).click();
+  await page.reload();
+  await expect(page.locator(".talkWorkspace__presence figure")).toHaveCount(2);
+  expect(fixture.requests.agentRuns).toEqual([]);
 });
 
 test("stopping a delegated child sends its own run and child IDs while leaving its sibling active", async ({ page }) => {

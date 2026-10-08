@@ -12,6 +12,7 @@ export { bloubStateFor } from "./bloubState.js";
 export default function BloubAvatar({
   state = "idle",
   label = "Ready",
+  agentName = "Hermes",
   reducedMotion: reducedMotionPreference,
   pointerFollowing = true,
   color = "sage",
@@ -160,6 +161,6 @@ export default function BloubAvatar({
     className="bloubAvatar"
     viewBox={`${-DEMI_VIEWBOX} ${-DEMI_VIEWBOX} ${DEMI_VIEWBOX * 2} ${DEMI_VIEWBOX * 2}`}
     role="img"
-    aria-label={`Hermes avatar, ${label}`}
+    aria-label={`${agentName} avatar, ${label}`}
   />;
 }

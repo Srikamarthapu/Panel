@@ -92,7 +92,14 @@ class ControlSessionManager(SessionManager):
             resolved.add("panel_agents")
         mcp_servers = resolved & enabled_mcp_server_names(config)
         kwargs["enabled_toolsets"] = _expand_acp_enabled_toolsets(sorted(resolved - mcp_servers), sorted(mcp_servers))
+        planning_only = os.environ.get("PANEL_DISABLE_TOOLS") == "1"
+        if planning_only:
+            kwargs["enabled_toolsets"] = []
         agent = super()._make_agent(**kwargs)
+        if planning_only:
+            agent.tools = []
+            agent.valid_tool_names = set()
+            agent.enabled_toolsets = []
         if model and agent.model != model:
             raise RuntimeError("Hermes did not retain the explicitly selected Control model.")
         agent.ephemeral_system_prompt = os.environ.get("PANEL_ACP_INSTRUCTIONS", "")
@@ -132,7 +139,7 @@ class ControlACPAgent(server.HermesACPAgent):
                     raise RuntimeError("The saved Panel agent identity could not be applied safely.")
             state.agent._panel_run_id = run_id if isinstance(run_id, str) and len(run_id) <= 128 else ""
             base = os.environ.get("PANEL_ACP_INSTRUCTIONS", "").strip()
-            turn = turn_instructions.strip() if isinstance(turn_instructions, str) and len(turn_instructions) <= 8_000 else ""
+            turn = turn_instructions.strip() if isinstance(turn_instructions, str) and len(turn_instructions) <= 20_000 else ""
             state.agent.ephemeral_system_prompt = "\n\n".join(part for part in (base, turn) if part)
         return await super().prompt(prompt=prompt, session_id=session_id, **kwargs)
 

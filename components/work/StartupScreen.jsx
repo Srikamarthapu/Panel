@@ -5,7 +5,7 @@ import MissionOrb from "@/components/MissionOrb.jsx";
 import { useInterfacePreferences } from "@/components/preferences/InterfacePreferencesProvider.jsx";
 import styles from "./StartupScreen.module.css";
 
-export default function StartupScreen({ loading = true, error = "", onRetry, loadingMessage = "Loading your saved sessions…" }) {
+export default function StartupScreen({ loading = true, error = "", onRetry, onContinue, loadingMessage = "Loading your saved sessions…" }) {
   const { avatar } = useInterfacePreferences();
   const retry = useRef(null);
   const failed = !loading && !!error;
@@ -19,7 +19,7 @@ export default function StartupScreen({ loading = true, error = "", onRetry, loa
       <span className={styles.brand}>Panel</span>
       <h1 id="startup-title">{failed ? "Couldn’t open your workspace" : "Opening your workspace"}</h1>
       <p className={styles.status} role={failed ? "alert" : "status"}>{failed ? error : loadingMessage}</p>
-      {failed && onRetry && <button ref={retry} type="button" className={styles.retry} onClick={onRetry}>Try again</button>}
+      {failed && <div className={styles.actions}>{onRetry && <button ref={retry} type="button" className={styles.retry} onClick={onRetry}>Try again</button>}{onContinue && <button type="button" className={styles.continue} onClick={onContinue}>Continue to workspace</button>}</div>}
     </div>
   </main>;
 }
