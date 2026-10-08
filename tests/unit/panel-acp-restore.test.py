@@ -1,10 +1,13 @@
 """Run with the installed Hermes Python; exercises its real ACP session base."""
 import importlib.util
+import io
+import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+from contextlib import redirect_stdout
 
 os.environ.setdefault("HERMES_REPO", str(Path.home() / ".hermes/hermes-agent"))
 adapter_path = Path(__file__).resolve().parents[2] / "scripts/voice/panel-acp.py"
@@ -69,6 +72,126 @@ class RestoreTests(unittest.TestCase):
 
 
 class TurnInstructionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_turn_result_reports_only_provider_confirmed_usage_deltas(self):
+        control = adapter.ControlACPAgent()
+        previous_usage = {"input_tokens": 10}
+        agent = SimpleNamespace(
+            session_input_tokens=120,
+            session_output_tokens=25,
+            session_estimated_cost_usd=0.006,
+            session_cost_status="estimated",
+            _last_turn_usage={"input_tokens": 70},
+            _panel_usage_baseline={"input": 50, "output": 5, "cost": 0.002, "last_usage": previous_usage},
+        )
+        state = SimpleNamespace(agent=agent, cancel_event=None)
+
+        async def finish_base(self, state, session_id, conn, result, pre_turn_hermes_id, streamed_message):
+            return {"stopReason": "end_turn"}
+
+        output = io.StringIO()
+        with patch.object(adapter.server.HermesACPAgent, "_finish_turn", finish_base), redirect_stdout(output):
+            response = await control._finish_turn(state, "native", object(), {"final_response": "Done", "completed": True}, None, "Done")
+
+        event = json.loads(output.getvalue())
+        self.assertEqual(response, {"stopReason": "end_turn"})
+        self.assertEqual(event["params"]["usage"], {"inputTokens": 70, "outputTokens": 20, "costUsd": 0.004})
+
+    async def test_turn_result_treats_reset_counters_as_unknown_instead_of_zero(self):
+        control = adapter.ControlACPAgent()
+        previous_usage = {"input_tokens": 10}
+        state = SimpleNamespace(agent=SimpleNamespace(
+            session_input_tokens=2,
+            session_output_tokens=1,
+            session_estimated_cost_usd=0.0,
+            session_cost_status="unknown",
+            _last_turn_usage={"input_tokens": 2},
+            _panel_usage_baseline={"input": 50, "output": 5, "cost": 0.002, "last_usage": previous_usage},
+        ), cancel_event=None)
+
+        async def finish_base(self, state, session_id, conn, result, pre_turn_hermes_id, streamed_message):
+            return {"stopReason": "end_turn"}
+
+        output = io.StringIO()
+        with patch.object(adapter.server.HermesACPAgent, "_finish_turn", finish_base), redirect_stdout(output):
+            await control._finish_turn(state, "native", object(), {"final_response": "Done", "completed": True}, None, "Done")
+
+        self.assertNotIn("usage", json.loads(output.getvalue())["params"])
+
+    async def test_unknown_pricing_reports_tokens_without_claiming_zero_cost(self):
+        control = adapter.ControlACPAgent()
+        previous_usage = {"input_tokens": 10}
+        state = SimpleNamespace(agent=SimpleNamespace(
+            session_input_tokens=15,
+            session_output_tokens=3,
+            session_estimated_cost_usd=0.0,
+            session_cost_status="unknown",
+            _last_turn_usage={"input_tokens": 15},
+            _panel_usage_baseline={"input": 10, "output": 1, "cost": 0.0, "last_usage": previous_usage},
+        ), cancel_event=None)
+
+        async def finish_base(self, state, session_id, conn, result, pre_turn_hermes_id, streamed_message):
+            return {"stopReason": "end_turn"}
+
+        output = io.StringIO()
+        with patch.object(adapter.server.HermesACPAgent, "_finish_turn", finish_base), redirect_stdout(output):
+            await control._finish_turn(state, "native", object(), {"final_response": "Done", "completed": True}, None, "Done")
+
+        self.assertEqual(json.loads(output.getvalue())["params"]["usage"], {
+            "inputTokens": 5, "outputTokens": 2, "costUsd": None,
+        })
+
+    async def test_turn_without_provider_usage_does_not_report_a_zero_delta(self):
+        control = adapter.ControlACPAgent()
+        previous_usage = {"input_tokens": 10}
+        state = SimpleNamespace(agent=SimpleNamespace(
+            session_input_tokens=50,
+            session_output_tokens=5,
+            session_estimated_cost_usd=0.002,
+            session_cost_status="estimated",
+            _last_turn_usage=None,
+            _panel_usage_baseline={"input": 50, "output": 5, "cost": 0.002, "last_usage": previous_usage},
+        ), cancel_event=None)
+
+        async def finish_base(self, state, session_id, conn, result, pre_turn_hermes_id, streamed_message):
+            return {"stopReason": "end_turn"}
+
+        output = io.StringIO()
+        with patch.object(adapter.server.HermesACPAgent, "_finish_turn", finish_base), redirect_stdout(output):
+            response = await control._finish_turn(state, "native", object(), {"final_response": "Still answered.", "completed": True}, None, "Still answered.")
+
+        event = json.loads(output.getvalue())
+        self.assertEqual(response, {"stopReason": "end_turn"})
+        self.assertEqual(event["params"]["text"], "Still answered.")
+        self.assertNotIn("usage", event["params"])
+
+    async def test_malformed_optional_counters_cannot_swallow_a_valid_final_answer(self):
+        control = adapter.ControlACPAgent()
+        previous_usage = {"input_tokens": 10}
+        agent = SimpleNamespace(
+            session_input_tokens="not-a-number",
+            session_output_tokens=object(),
+            session_estimated_cost_usd="NaN",
+            session_cost_status="estimated",
+            _last_turn_usage={"input_tokens": 12},
+            _panel_usage_baseline={"input": 10, "output": 2, "cost": 0.001, "last_usage": previous_usage},
+        )
+        state = SimpleNamespace(agent=agent, cancel_event=None)
+
+        async def finish_base(self, state, session_id, conn, result, pre_turn_hermes_id, streamed_message):
+            return {"stopReason": "end_turn"}
+
+        output = io.StringIO()
+        with patch.object(adapter.server.HermesACPAgent, "_finish_turn", finish_base), redirect_stdout(output):
+            response = await control._finish_turn(state, "native", object(), {"final_response": "Valid answer.", "completed": True}, None, "Valid answer.")
+
+        event = json.loads(output.getvalue())
+        self.assertEqual(response, {"stopReason": "end_turn"})
+        self.assertEqual(event["params"]["text"], "Valid answer.")
+        self.assertNotIn("usage", event["params"])
+        self.assertEqual(adapter._usage_baseline(agent)["input"], None)
+        self.assertEqual(adapter._usage_baseline(agent)["output"], None)
+        self.assertEqual(adapter._usage_baseline(agent)["cost"], None)
+
     async def test_spoken_written_spoken_instructions_change_ephemerally_on_one_session(self):
         control = adapter.ControlACPAgent()
         history = [{"role": "user", "content": "Earlier native request."}]

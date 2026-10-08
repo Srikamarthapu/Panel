@@ -41,6 +41,42 @@ async function modelFixture(page) {
 }
 const row = (page, model) => page.locator(".modelCatalogRow").filter({ has: page.locator("strong").filter({ hasText: new RegExp(`^${model}$`) }) });
 
+test("provider management opens the configured dashboard, explains setup, and restores keyboard focus", async ({ page }) => {
+  const dashboard = "http://127.0.0.1:9119/models?profile=default";
+  const opens = [];
+  await page.addInitScript(() => { window.__TAURI__ = {}; });
+  await page.route("**/api/models/setup", route => {
+    if (route.request().method() === "POST") { opens.push(route.request().postDataJSON()); return route.fulfill({ json: { opened: true } }); }
+    return route.fulfill({ json: { dashboardUrl: dashboard } });
+  });
+  await modelFixture(page);
+  const trigger = page.getByRole("button", { name: "Manage providers", exact: true });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Providers & API keys" });
+  await expect(dialog).toBeVisible();
+  const link = dialog.getByRole("link", { name: "Open Hermes dashboard" });
+  await expect(link).toHaveAttribute("href", dashboard);
+  await link.click();
+  await expect(dialog.getByRole("status")).toContainText("Dashboard opened in your browser");
+  expect(opens).toEqual([{ action: "open-dashboard" }]);
+  await expect(dialog.locator("input[type=password]")).toHaveCount(0);
+  expect((await new AxeBuilder({ page }).include(".sessionDialog").withTags(["wcag2a", "wcag2aa"]).analyze()).violations).toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+});
+
+test("dashboard setup failure keeps a usable link and terminal fallback", async ({ page }) => {
+  await page.route("**/api/models/setup", route => route.fulfill({ status: 503, json: { error: "Unavailable" } }));
+  await modelFixture(page);
+  await page.getByRole("button", { name: "Manage providers", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Providers & API keys" });
+  await expect(dialog.getByRole("alert")).toContainText("default port, 9119");
+  await expect(dialog.getByText("hermes dashboard", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("hermes model", { exact: true })).toBeVisible();
+  await expect(dialog.getByRole("link", { name: "Open Hermes dashboard" })).toHaveAttribute("href", "http://127.0.0.1:9119/models?profile=default");
+});
+
 test("Models starts with current provider and saved choices without an unverified wall", async ({ page }) => {
   const { requests } = await modelFixture(page);
   await expect(page.getByRole("heading", { name: "DeepSeek", exact: true })).toBeVisible();

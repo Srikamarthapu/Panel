@@ -41,6 +41,12 @@ export default function InterfaceSettings() {
           <PreferenceRow title="Follow cursor" description={reducedMotion ? "Saved for when full motion is enabled. Reduced motion keeps the avatar still." : "Bloub looks toward the pointer while it’s idle."}>
             <button type="button" role="switch" aria-checked={preferences.pointerFollowing} aria-label="Follow cursor" className="preferenceSwitch" onClick={() => update({ pointerFollowing: !preferences.pointerFollowing })}><span aria-hidden="true" /><span>{preferences.pointerFollowing ? "On" : "Off"}</span></button>
           </PreferenceRow>
+          <PreferenceRow title="Companion glow" description="Give the teammates around your main companion a soft, static glow.">
+            <button type="button" role="switch" aria-checked={preferences.companionGlow} aria-label="Companion glow" className="preferenceSwitch" onClick={() => update({ companionGlow: !preferences.companionGlow })}><span aria-hidden="true" /><span>{preferences.companionGlow ? "On" : "Off"}</span></button>
+          </PreferenceRow>
+          <PreferenceRow title="Companion float" description={reducedMotion ? "Saved for when full motion is enabled. Reduced motion keeps teammates still." : "Let surrounding teammates drift gently in place without orbiting."}>
+            <button type="button" role="switch" aria-checked={preferences.companionFloat} aria-label="Companion float" className="preferenceSwitch" onClick={() => update({ companionFloat: !preferences.companionFloat })}><span aria-hidden="true" /><span>{preferences.companionFloat ? "On" : "Off"}</span></button>
+          </PreferenceRow>
         </section>
         <section className="preferenceSection" aria-labelledby="reading-heading">
           <h2 id="reading-heading">Reading</h2>

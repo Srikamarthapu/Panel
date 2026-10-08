@@ -200,11 +200,17 @@ export default function WorkSessionProvider({ children }) {
     const data = await workRequest(`/api/agents/${id}/runs`, { method: "POST", body: JSON.stringify({ text, actionId }) });
     await refresh(); return data;
   }, [refresh]);
+  const openAgentConversation = useCallback(async id => {
+    const data = await workRequest(`/api/agents/${id}/session`, { method: "POST", body: "{}" });
+    await refresh();
+    await selectSession(data.session.id);
+    return data;
+  }, [refresh, selectSession]);
   const stopDelegation = useCallback(async agent => {
     const data = await workRequest("/api/agents/delegations", { method: "DELETE", body: JSON.stringify({ sessionId: agent.sessionId, runId: agent.runId, agentId: agent.id }) });
     await refresh(); return data;
   }, [refresh]);
-  const value = useMemo(() => ({ sessions, agents, delegations, agentsError, activeAgent, selectedAgentIds, selectedAgents, toggleAgentPresence, clearAgentPresence, saveAgent, runAgent, stopDelegation, activeRuns, activeSession: active?.session, busy, loading, error, refresh, selectSession, createSession, updateSession, renameSession, pinSession, archiveSession, restoreSession, stopSessionRun }), [sessions, agents, delegations, agentsError, activeAgent, selectedAgentIds, selectedAgents, toggleAgentPresence, clearAgentPresence, saveAgent, runAgent, stopDelegation, activeRuns, active, busy, loading, error, refresh, selectSession, createSession, updateSession, renameSession, pinSession, archiveSession, restoreSession, stopSessionRun]);
+  const value = useMemo(() => ({ sessions, agents, delegations, agentsError, activeAgent, selectedAgentIds, selectedAgents, toggleAgentPresence, clearAgentPresence, saveAgent, runAgent, openAgentConversation, stopDelegation, activeRuns, activeSession: active?.session, busy, loading, error, refresh, selectSession, createSession, updateSession, renameSession, pinSession, archiveSession, restoreSession, stopSessionRun }), [sessions, agents, delegations, agentsError, activeAgent, selectedAgentIds, selectedAgents, toggleAgentPresence, clearAgentPresence, saveAgent, runAgent, openAgentConversation, stopDelegation, activeRuns, active, busy, loading, error, refresh, selectSession, createSession, updateSession, renameSession, pinSession, archiveSession, restoreSession, stopSessionRun]);
   if (!active) return <StartupScreen loading={loading} error={error} onRetry={boot} />;
   return <WorkSessionContext.Provider value={value}>
     <VoiceProvider key={`${active.session.id}:${active.revision}`} sessionId={active.session.id} initialTranscript={active.messages || []} initialActiveRun={active.activeRun}>

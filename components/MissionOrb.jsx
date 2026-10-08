@@ -107,6 +107,7 @@ export default function MissionOrb({
   avatar = "orb",
   color,
   pointerFollowing,
+  preserveBloubBody = false,
 }) {
   const voice = useVoice();
   const { preferences, reducedMotion, palette } = useInterfacePreferences();
@@ -120,7 +121,7 @@ export default function MissionOrb({
   if (avatar === "bloub") {
     return (
       <div className="mcOrb mcOrb--bloub" data-size={size} data-state={visual.state} data-stale={visual.isStale || undefined}>
-        <BloubAvatar state={visual.state} label={visual.label} agentName={agentName} reducedMotion={reducedMotion} pointerFollowing={pointerFollowing ?? preferences.pointerFollowing} color={color || preferences.avatarColor} />
+        <BloubAvatar state={visual.state} label={visual.label} agentName={agentName} reducedMotion={reducedMotion} pointerFollowing={pointerFollowing ?? preferences.pointerFollowing} color={color || preferences.avatarColor} preserveBody={preserveBloubBody} />
       </div>
     );
   }

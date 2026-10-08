@@ -16,6 +16,7 @@ export default function BloubAvatar({
   reducedMotion: reducedMotionPreference,
   pointerFollowing = true,
   color = "sage",
+  preserveBody = false,
 }) {
   const svgRef = useRef(null);
   const engineRef = useRef(null);
@@ -27,7 +28,7 @@ export default function BloubAvatar({
   colorRef.current = color;
   const uid = `bloub-${useId().replaceAll(":", "")}`;
 
-  if (!engineRef.current) engineRef.current = new BotEngine(RAYON, bloubStateFor(state));
+  if (!engineRef.current) engineRef.current = new BotEngine(RAYON, bloubStateFor(state, { preserveBody }));
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -38,7 +39,7 @@ export default function BloubAvatar({
       rendererRef.current = createBloubRenderer(svg, uid, colorRef.current);
     }
     const renderer = rendererRef.current;
-    engine.setState(bloubStateFor(state), clockRef.current);
+    engine.setState(bloubStateFor(state, { preserveBody }), clockRef.current);
     engine.setLook(null, clockRef.current, 0.24);
 
     let frameId = null;
@@ -150,7 +151,7 @@ export default function BloubAvatar({
       window.removeEventListener("blur", resetLook);
       engine.setLook(null, clockRef.current);
     };
-  }, [state, reducedMotion, pointerFollowing, uid]);
+  }, [state, reducedMotion, pointerFollowing, preserveBody, uid]);
 
   useEffect(() => {
     rendererRef.current?.setColor(color);

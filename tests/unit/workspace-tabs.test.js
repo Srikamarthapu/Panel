@@ -142,6 +142,7 @@ test("a fresh build reservation survives the missing-run launch gap and reconcil
 
 test("runtime identity separates planning-only agents from tool-capable agents", () => {
   const common = { sessionId: "same", workingDirectory: fixture, provider: "test", model: "model", reasoningEffort: "low", agentName: "Hermes", agentSoul: "same" };
+  assert.equal(JSON.parse(runtime.assistantRuntimeFingerprint({ ...common, disableTools: true }))[0], 8);
   assert.notEqual(runtime.assistantRuntimeFingerprint({ ...common, disableTools: true }), runtime.assistantRuntimeFingerprint({ ...common, disableTools: false }));
   assert.equal(runtime.assistantRuntimeFingerprint({ ...common, disableTools: true }), runtime.assistantRuntimeFingerprint({ ...common, disableTools: true }));
 });

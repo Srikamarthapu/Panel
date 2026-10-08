@@ -9,7 +9,7 @@ import {
 } from "../../lib/interface-preferences.js";
 
 test("local appearance storage accepts only recognized bounded preferences", () => {
-  const expected = { version: 1, motion: "full", pointerFollowing: false, avatarColor: "blue", textSize: "larger", conversationSpacing: "compact" };
+  const expected = { version: 1, motion: "full", pointerFollowing: false, companionGlow: false, companionFloat: false, avatarColor: "blue", textSize: "larger", conversationSpacing: "compact" };
   assert.deepEqual(parseInterfacePreferences(JSON.stringify({ ...expected, apiKey: "never retain" })), expected);
   assert.deepEqual(normalizeInterfacePreferences({ motion: "run-code", pointerFollowing: "false", avatarColor: "url(secret)", textSize: 400 }), DEFAULT_INTERFACE_PREFERENCES);
   for (const bad of [null, "{", "null", "[]", '"string"', '{"version":99,"textSize":"larger"}', "x".repeat(4097)]) {

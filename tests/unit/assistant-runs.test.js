@@ -25,6 +25,22 @@ test("early turn receipts preserve complete, failed, and partial exit semantics"
   assert.equal(readHermesTurnResult({ type: "result", exit_code: 0, text: "wrong envelope" }), null);
 });
 
+test("provider-reported usage is bounded and retained only on authoritative results", () => {
+  assert.deepEqual(readHermesResult({ type: "result", exit_code: 0, text: "Finished.", usage: { inputTokens: 120, outputTokens: 30, costUsd: 0.004 } }), {
+    state: "complete", response: "Finished.", error: "", usage: { inputTokens: 120, outputTokens: 30, totalTokens: 150, costUsd: 0.004 },
+  });
+  assert.deepEqual(readHermesResult({ type: "result", exit_code: 1, error: "provider failed", usage: { inputTokens: 4, outputTokens: 1, costUsd: null } }).usage, {
+    inputTokens: 4, outputTokens: 1, totalTokens: 5, costUsd: null,
+  });
+  for (const usage of [
+    { inputTokens: -1, outputTokens: 2, costUsd: 0 },
+    { inputTokens: 1.5, outputTokens: 2, costUsd: 0 },
+    { inputTokens: 1_000_000_000_001, outputTokens: 2, costUsd: 0 },
+    { inputTokens: 1, outputTokens: 2, costUsd: -1 },
+    { inputTokens: 1, outputTokens: 2, costUsd: Number.POSITIVE_INFINITY },
+  ]) assert.equal(readHermesResult({ type: "result", exit_code: 0, text: "Finished.", usage }).usage, undefined);
+});
+
 test("durable run lifecycle resumes exact sessions and completes only from a terminal result", async () => {
   const original = process.cwd();
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "hermes-run-fixture-"));

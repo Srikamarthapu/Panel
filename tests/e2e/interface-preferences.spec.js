@@ -16,6 +16,8 @@ test("appearance choices persist and change the actual conversation typography a
   await page.getByRole("button", { name: "Sky", exact: true }).click();
   await page.getByRole("group", { name: "Avatar motion" }).getByRole("button", { name: "Reduced", exact: true }).click();
   await page.getByRole("switch", { name: "Follow cursor" }).click();
+  await page.getByRole("switch", { name: "Companion glow" }).click();
+  await page.getByRole("switch", { name: "Companion float" }).click();
   await page.getByRole("group", { name: "Text size" }).getByRole("button", { name: "Larger", exact: true }).click();
   await page.getByRole("group", { name: "Conversation spacing" }).getByRole("button", { name: "Compact", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-panel-motion", "reduced");
@@ -34,6 +36,8 @@ test("appearance choices persist and change the actual conversation typography a
   await expect(page.getByRole("group", { name: "Avatar", exact: true }).getByRole("button", { name: "Bloub", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: "Sky", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("switch", { name: "Follow cursor" })).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByRole("switch", { name: "Companion glow" })).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByRole("switch", { name: "Companion float" })).toHaveAttribute("aria-checked", "false");
   expect(errors).toEqual([]);
 });
 
@@ -51,6 +55,8 @@ test("system motion updates live, an explicit choice overrides it, and reset res
   await expect(page.getByRole("button", { name: "Sage", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("group", { name: "Avatar", exact: true }).getByRole("button", { name: "Orb", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("switch", { name: "Follow cursor" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("switch", { name: "Companion glow" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("switch", { name: "Companion float" })).toHaveAttribute("aria-checked", "true");
   await expect(page.getByRole("status")).toContainText("Appearance restored to the defaults.");
 });
 

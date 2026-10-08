@@ -6,6 +6,7 @@ import { Check, ChevronRight, RefreshCw, Search } from "lucide-react";
 import { useVoice } from "@/components/voice/VoiceProvider.jsx";
 import useModelCatalog from "./useModelCatalog.js";
 import JevRouterSettings from "./JevRouterSettings.jsx";
+import ProviderSetup from "./ProviderSetup.jsx";
 import { catalogModels, filterCatalogModels, currentModelForRole, isCurrentModel, modelSourceLabel, modelAvailabilityLabel, canAssignCustomModel } from "@/lib/model-catalog-view.js";
 
 const ROLES = [
@@ -94,6 +95,7 @@ export default function ModelsWorkspace() {
   }
 
   return <section className="modelWorkspace modelWorkspaceV2">
+    <ProviderSetup onRefresh={() => load(true)} />
     <div className="modelAssignments" aria-label="Current model assignments">
       {ROLES.map(item => {
         const assignment = currentModelForRole(catalog, item.id);

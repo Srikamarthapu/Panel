@@ -50,6 +50,12 @@
   margin: 0;
 }
 
+.ensemble[data-motion-active] .sideAgent {
+  animation: companion-float 5.2s ease-in-out infinite;
+  animation-delay: calc(var(--companion-order) * -0.72s);
+  will-change: transform;
+}
+
 .sideColumn:first-child .sideAgent {
   grid-template-columns: minmax(0, 1fr) 52px;
   text-align: right;
@@ -70,6 +76,27 @@
 .sideAvatar :global(.mcOrb) {
   width: 52px;
   height: 52px;
+}
+
+.sideAvatar {
+  position: relative;
+  display: grid;
+  isolation: isolate;
+  place-items: center;
+}
+
+.sideAvatar::before {
+  position: absolute;
+  z-index: -1;
+  inset: -7px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--companion-glow-color) 30%, transparent) 0%, transparent 70%);
+  content: "";
+  opacity: 0;
+}
+
+.sideAgent[data-companion-glow] .sideAvatar::before {
+  opacity: .72;
 }
 
 .sideAgent figcaption {
@@ -166,4 +193,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .sideColumn { scroll-behavior: auto; }
+}
+
+@keyframes companion-float {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(0, -4px, 0); }
 }

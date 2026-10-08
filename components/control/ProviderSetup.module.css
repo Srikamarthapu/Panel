@@ -1,0 +1,17 @@
+.bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+.bar strong { font-size: 14px; font-weight: 500; color: var(--fg-1); }
+.bar p { margin: 5px 0 0; font-size: 12px; line-height: 1.5; color: var(--fg-3); }
+.bar button { flex-shrink: 0; }
+.dialog { width: min(540px, calc(100vw - 32px)); }
+.dialog h2:focus { outline: none; }
+.content { display: grid; gap: 22px; padding: 20px 24px; }
+.content section { display: grid; justify-items: start; gap: 10px; }
+.content h3 { margin: 0; font-size: 14px; font-weight: 500; }
+.content p { margin: 0; line-height: 1.6; font-size: 13px; color: var(--fg-2); }
+.content .hint { font-size: 12px; color: var(--fg-3); }
+.command { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
+.command code { font-size: 13px; user-select: text; }
+.docs { display: inline-flex; align-items: center; gap: 5px; color: var(--accent); font-size: 12px; text-underline-offset: 3px; }
+.notice { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.address { color: var(--fg-3); font-size: 11px; overflow-wrap: anywhere; user-select: text; }
+@media (max-width: 540px) { .bar { align-items: flex-start; flex-direction: column; gap: 12px; } .content { padding: 18px; } }

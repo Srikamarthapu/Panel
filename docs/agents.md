@@ -12,6 +12,14 @@ Profiles use the installed Hermes credentials, tools, skills, and global memory.
 
 Use **Run task** to start work without leaving your current conversation. Open **Conversation** to talk directly to that agent, inspect the full result, or handle a permission request. Edit an idle profile to change its role or model. **Archive** hides it and its conversation without deleting files; **Archived → Restore** brings it back. Active or delegated work must finish or stop before editing a profile.
 
+## History and usage
+
+Archiving a conversation does not archive its agent profile. Opening that agent or sending its next task starts a fresh conversation when needed; earlier messages stay archived. Profile archive remains a separate action on the Agents page.
+
+The Agents page shows cards with runtime, token usage, and estimated cost across the profile’s conversations, including archived ones. Missing metrics stay unavailable and incomplete history is marked partial. Cost uses Hermes’s reported turn usage and pricing estimates; auxiliary calls and provider retries are excluded, so these figures are not a provider bill.
+
+Select **Add to Talk** to show a companion beside the main agent. **Settings → Companion glow / Companion float** controls the effects independently. Motion follows the effective System, Full, or Reduced setting.
+
 ## Delegation
 
 When the Panel ACP adapter is available, Hermes receives a `panel_agents` tool. It can list saved profiles and start independent tasks with an appropriate teammate. Status and stop actions are scoped to the conversation that launched the task. The local UI can manage any of your own agents. Explicitly configured profile models take precedence over automatic model routing.

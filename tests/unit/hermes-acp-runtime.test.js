@@ -42,7 +42,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{const e=JSON.pa
    const runId=(p._meta||{})['hermes-control/run-id'];
    setTimeout(()=>out({jsonrpc:'2.0',method:'panel/agent_update',params:{sessionId:p.sessionId,runId,agent:{id:'child-for-'+runId,name:'Background helper',task:'Finish its focused task',status:'running',canStop:true}}}),120);
   }
-  out({jsonrpc:'2.0',method:'panel/turn_result',params:{sessionId:p.sessionId,text:'Done.',exit_code:0,error:''}});result={stopReason:'end_turn'};
+  out({jsonrpc:'2.0',method:'panel/turn_result',params:{sessionId:p.sessionId,text:'Done.',exit_code:0,error:'',usage:{inputTokens:12,outputTokens:3,costUsd:0.001}}});result={stopReason:'end_turn'};
  }
  if(e.id!==undefined)out({jsonrpc:'2.0',id:e.id,result});
 });
@@ -154,6 +154,8 @@ test("ACP warmup and repeated turns retain exact model, replay only public speec
     assert.equal(result.ready.model,"deepseek-v4-flash");
     assert.equal(result.first.state,"complete");
     assert.equal(result.second.state,"complete");
+    assert.deepEqual(result.first.usage,{inputTokens:12,outputTokens:3,totalTokens:15,costUsd:0.001});
+    assert.deepEqual(result.second.usage,result.first.usage);
     assert.equal(result.first.persistentRuntimePid,result.second.persistentRuntimePid);
     assert.equal(result.first.response,"Done.");
     assert.equal(result.chunks.map(x=>x.text).join(""),"Working. Done.");

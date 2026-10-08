@@ -68,6 +68,17 @@ test("offline presence keeps the full Bloub face visible while errors stay disti
   assert.equal(bloubStateFor("error"), "alert");
 });
 
+test("inline companions keep a full body during active and attention states", () => {
+  assert.equal(bloubStateFor("working"), "thinking", "the hero avatar retains the upstream three-dot working glyph");
+  for (const state of ["starting", "thinking", "working", "transcribing", "error", "idle"]) {
+    const visibleState = bloubStateFor(state, { preserveBody: true });
+    assert.notEqual(visibleState, "thinking", `${state} does not collapse an inline companion into three dots`);
+    const frame = new BotEngine(RAYON, visibleState).sample(1);
+    assert.ok(frame.bodyPath, `${state} keeps a rendered body path`);
+    assert.ok(frame.eyes.length > 0, `${state} keeps a recognizable face`);
+  }
+});
+
 test("persistent renderer updates every engine state without rebuilding its SVG nodes", () => {
   const document = new TestDocument();
   const svg = new TestElement(document, "svg");

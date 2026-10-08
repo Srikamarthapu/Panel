@@ -6,8 +6,10 @@ explicit arguments follows the same runtime-provider resolver as the CLI.
 No credentials, native config, or installed Hermes source are changed.
 """
 import asyncio
+from collections.abc import Mapping
 import inspect
 import json
+import math
 import os
 import sys
 
@@ -28,6 +30,38 @@ if not required.issubset(inspect.signature(SessionManager._make_agent).parameter
 turn_parameters = list(inspect.signature(server.HermesACPAgent._finish_turn).parameters)
 if turn_parameters != ["self", "state", "session_id", "conn", "result", "pre_turn_hermes_id", "streamed_message"]:
     raise RuntimeError("Installed Hermes ACP final-result contract is incompatible with Control.")
+
+
+def _usage_integer(value):
+    """Parse optional native counters without letting telemetry break a turn."""
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(number) or number < 0 or not number.is_integer() or number > 1_000_000_000_000:
+        return None
+    return int(number)
+
+
+def _usage_cost(value):
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) and number >= 0 else None
+
+
+def _usage_baseline(agent):
+    return {
+        "input": _usage_integer(getattr(agent, "session_input_tokens", None)),
+        "output": _usage_integer(getattr(agent, "session_output_tokens", None)),
+        "cost": _usage_cost(getattr(agent, "session_estimated_cost_usd", None)),
+        "last_usage": getattr(agent, "_last_turn_usage", None),
+    }
 
 
 class ControlSessionManager(SessionManager):
@@ -127,6 +161,7 @@ class ControlACPAgent(server.HermesACPAgent):
         run_id = kwargs.pop("hermes-control/run-id", None)
         state = await asyncio.to_thread(self.session_manager.get_session, session_id)
         if state is not None:
+            state.agent._panel_usage_baseline = _usage_baseline(state.agent)
             profile_soul = os.environ.get("PANEL_AGENT_SOUL", "")
             if profile_soul:
                 applied = await asyncio.to_thread(
@@ -181,10 +216,33 @@ class ControlACPAgent(server.HermesACPAgent):
         if final.startswith("Error: ") and not error:
             error = final
         incomplete = result.get("failed") or result.get("partial") or result.get("completed") is False
-        print(json.dumps({"jsonrpc": "2.0", "method": "panel/turn_result", "params": {
+        baseline = getattr(state.agent, "_panel_usage_baseline", None)
+        usage = None
+        current_turn_usage = getattr(state.agent, "_last_turn_usage", None)
+        if (isinstance(baseline, dict) and isinstance(current_turn_usage, Mapping) and current_turn_usage
+                and current_turn_usage is not baseline.get("last_usage")):
+            current_input = _usage_integer(getattr(state.agent, "session_input_tokens", None))
+            current_output = _usage_integer(getattr(state.agent, "session_output_tokens", None))
+            current_cost = _usage_cost(getattr(state.agent, "session_estimated_cost_usd", None))
+            # A provider/session reset makes a cumulative delta unknowable. Never
+            # turn that reset into a fabricated zero-usage turn.
+            if (current_input is not None and current_output is not None
+                    and baseline.get("input") is not None and baseline.get("output") is not None
+                    and current_input >= baseline["input"] and current_output >= baseline["output"]):
+                input_tokens = current_input - baseline["input"]
+                output_tokens = current_output - baseline["output"]
+                cost_status = str(getattr(state.agent, "session_cost_status", "") or "").lower()
+                baseline_cost = baseline.get("cost")
+                cost = current_cost - baseline_cost if current_cost is not None and baseline_cost is not None and current_cost >= baseline_cost else None
+                usage = {"inputTokens": input_tokens, "outputTokens": output_tokens,
+                         "costUsd": cost if cost is not None and (cost > 0 or cost_status not in {"", "none", "unknown", "unavailable"}) else None}
+        params = {
             "sessionId": session_id, "text": final, "error": error,
             "exit_code": 1 if error or cancelled or result.get("interrupted") or incomplete else 0,
-        }}), flush=True)
+        }
+        if usage is not None:
+            params["usage"] = usage
+        print(json.dumps({"jsonrpc": "2.0", "method": "panel/turn_result", "params": params}), flush=True)
         return response
 
 

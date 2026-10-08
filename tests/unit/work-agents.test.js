@@ -142,6 +142,78 @@ test("archiving and reopening a profile preserves its session, workspace, model,
   assert.equal(agents.agentForSession(sessions.getWorkSession(agent.sessionId)).id, agent.id);
 });
 
+test("archiving an agent conversation keeps the profile and starts its next task in a fresh conversation", async () => {
+  const agent = agents.createWorkAgent({
+    id: "conversation-independent-profile",
+    name: "Persistent researcher",
+    soul: "Keep the profile while preserving old conversations.",
+    provider: "provider-a",
+    model: "model-a",
+  });
+  const oldRun = runs.createAssistantRun({ id: "old-agent-turn", sessionId: agent.sessionId, text: "Preserve this prompt." });
+  runs.updateAssistantRun(oldRun.id, { state: "complete", response: "Preserve this answer." });
+  const oldMessages = sessions.getWorkSession(agent.sessionId).messages;
+  sessions.updateWorkSession(agent.sessionId, { archived: true });
+
+  assert.equal(agents.listWorkAgents().some(item => item.id === agent.id), true);
+  assert.equal(agents.getWorkAgent(agent.id).archivedAt, null);
+  const spawner = fakeSpawner();
+  const accepted = await actions.runWorkAgent(agent.id, { actionId: "fresh-agent-turn", text: "Continue in a new conversation." }, { spawnProcess: spawner.spawnProcess });
+  const refreshed = agents.getWorkAgent(agent.id);
+
+  assert.notEqual(refreshed.sessionId, agent.sessionId);
+  assert.equal(accepted.sessionId, refreshed.sessionId);
+  assert.equal(sessions.getWorkSession(refreshed.sessionId).agentId, agent.id);
+  assert.equal(sessions.getWorkSession(refreshed.sessionId).archivedAt, null);
+  assert.ok(sessions.getWorkSession(agent.sessionId).archivedAt);
+  assert.deepEqual(sessions.getWorkSession(agent.sessionId).messages, oldMessages);
+  assert.equal(refreshed.soul, agent.soul);
+  assert.equal(refreshed.workingDirectory, agent.workingDirectory);
+  assert.deepEqual([refreshed.provider, refreshed.model], [agent.provider, agent.model]);
+  const payload = JSON.parse(fs.readFileSync(requestFileForRun("fresh-agent-turn"), "utf8"));
+  assert.equal(payload.sessionId, refreshed.sessionId);
+  assert.equal(payload.agentId, agent.id);
+  runs.cancelAssistantRun("fresh-agent-turn", refreshed.sessionId);
+});
+
+test("profile stats aggregate real run telemetry across archived and replacement conversations", () => {
+  const agent = agents.createWorkAgent({ id: "stats-profile", name: "Measured agent" });
+  const first = runs.createAssistantRun({ id: "measured-first", sessionId: agent.sessionId, text: "First" });
+  runs.updateAssistantRun(first.id, {
+    state: "complete", response: "Done", runnerStartedAt: "2026-10-07T10:00:00.000Z", executionFinishedAt: "2026-10-07T10:00:02.500Z",
+    usage: { inputTokens: 120, outputTokens: 30, totalTokens: 150, costUsd: 0.004 },
+  });
+  assert.equal(runs.updateAssistantRun(first.id, { usage: { inputTokens: 999, outputTokens: 999, costUsd: 999 } }).usage.inputTokens, 120);
+  sessions.updateWorkSession(agent.sessionId, { archived: true });
+  const replacement = agents.ensureWorkAgentSession(agent.id);
+  const second = runs.createAssistantRun({ id: "measured-second", sessionId: replacement.sessionId, text: "Second" });
+  runs.updateAssistantRun(second.id, {
+    state: "error", error: "Unavailable", runnerStartedAt: "2026-10-07T11:00:00.000Z", executionFinishedAt: "2026-10-07T11:00:01.500Z",
+    usage: { inputTokens: 80, outputTokens: 20, totalTokens: 100, costUsd: 0 },
+  });
+  const unknown = runs.createAssistantRun({ id: "unreported-third", sessionId: replacement.sessionId, text: "Third" });
+  runs.updateAssistantRun(unknown.id, { state: "interrupted", error: "Stopped" });
+
+  const stats = agents.publicWorkAgent(agents.getWorkAgent(agent.id)).stats;
+  assert.deepEqual(stats.runs, { total: 3, completed: 1, failed: 1, cancelled: 0, interrupted: 1 });
+  assert.deepEqual(stats.runtime, { totalMs: 4000, reportedRuns: 2, availability: "partial" });
+  assert.deepEqual(stats.usage, { inputTokens: 200, outputTokens: 50, totalTokens: 250, reportedRuns: 2, availability: "partial" });
+  assert.deepEqual(stats.cost, { amount: 0.004, currency: "USD", reportedRuns: 2, availability: "partial" });
+  assert.equal(stats.lastRunAt, runs.getAssistantRun(unknown.id).updatedAt);
+  assert.deepEqual(agents.listWorkAgents().find(item => item.id === agent.id).stats, stats);
+  assert.ok(sessions.getWorkSession(agent.sessionId).archivedAt);
+});
+
+test("stats use null instead of fabricated zero when providers reported no telemetry", () => {
+  const agent = agents.createWorkAgent({ id: "unknown-stats-profile", name: "Unknown stats" });
+  const run = runs.createAssistantRun({ id: "unknown-stats-run", sessionId: agent.sessionId, text: "Run" });
+  runs.updateAssistantRun(run.id, { state: "cancelled", error: "Stopped" });
+  const stats = agents.publicWorkAgent(agents.getWorkAgent(agent.id)).stats;
+  assert.deepEqual(stats.runtime, { totalMs: null, reportedRuns: 0, availability: "unavailable" });
+  assert.deepEqual(stats.usage, { inputTokens: null, outputTokens: null, totalTokens: null, reportedRuns: 0, availability: "unavailable" });
+  assert.deepEqual(stats.cost, { amount: null, currency: null, reportedRuns: 0, availability: "unavailable" });
+});
+
 test("missing work folders are rejected and stale sessions fail closed when a profile folder is gone", () => {
   const missing = path.join(temporary, "does-not-exist");
   assert.throws(
@@ -217,7 +289,45 @@ test("caller sessions cannot inspect or stop another session's delegated agent r
   assert.throws(() => actions.workAgentRun(agent.id, accepted.run.id, { callerSessionId: other.id, stop: true }), statusIs(404));
   assert.equal(actions.workAgentRun(agent.id, accepted.run.id, { callerSessionId: caller.id }).run.id, accepted.run.id);
   assert.equal(actions.workAgentRun(agent.id, accepted.run.id, { callerSessionId: caller.id, stop: true }).run.state, "cancelled");
-  assert.throws(() => actions.workAgentRun("different-agent", accepted.run.id, { callerSessionId: caller.id }), statusIs(404));
+  const different = agents.createWorkAgent({ id: "different-agent", name: "Different agent" });
+  assert.throws(() => actions.workAgentRun(different.id, accepted.run.id, { callerSessionId: caller.id }), statusIs(404));
+});
+
+test("historical agent runs remain addressable only through their owning profile and caller", () => {
+  const agent = agents.createWorkAgent({ id: "historical-run-agent", name: "Historical run agent" });
+  const otherAgent = agents.createWorkAgent({ id: "historical-run-other", name: "Other historical agent" });
+  const caller = sessions.createWorkSession({ name: "Historical caller" });
+  const otherCaller = sessions.createWorkSession({ name: "Other historical caller" });
+  const oldSessionId = agent.sessionId;
+  const finished = runs.createAssistantRun({
+    id: "historical-finished-run", sessionId: oldSessionId, text: "Finished work", source: "agent",
+    agentId: agent.id, agentName: agent.name, parentSessionId: caller.id,
+  });
+  runs.updateAssistantRun(finished.id, { state: "complete", response: "Finished result." });
+  sessions.updateWorkSession(oldSessionId, { archived: true });
+  const replacement = agents.ensureWorkAgentSession(agent.id);
+
+  const historical = actions.workAgentRun(agent.id, finished.id, { callerSessionId: caller.id });
+  assert.equal(historical.sessionId, oldSessionId);
+  assert.equal(historical.run.id, finished.id);
+  assert.equal(historical.run.state, "complete");
+  assert.equal(agents.getWorkAgent(agent.id).sessionId, replacement.sessionId);
+  assert.throws(() => actions.workAgentRun(otherAgent.id, finished.id, { callerSessionId: caller.id }), statusIs(404));
+  assert.throws(() => actions.workAgentRun(agent.id, finished.id, { callerSessionId: otherCaller.id }), statusIs(404));
+
+  // A historical session may be restored for reading. Even if an old client
+  // left a queued run there, stop must target that run's own session and must
+  // not touch the profile's replacement conversation.
+  sessions.updateWorkSession(oldSessionId, { archived: false });
+  const stoppable = runs.createAssistantRun({
+    id: "historical-stoppable-run", sessionId: oldSessionId, text: "Stop old work", source: "agent",
+    agentId: agent.id, agentName: agent.name, parentSessionId: caller.id,
+  });
+  const stopped = actions.workAgentRun(agent.id, stoppable.id, { callerSessionId: caller.id, stop: true });
+  assert.equal(stopped.sessionId, oldSessionId);
+  assert.equal(stopped.run.state, "cancelled");
+  assert.equal(runs.getAssistantRun(stoppable.id, oldSessionId).state, "cancelled");
+  assert.equal(sessions.currentWorkSessionRun(replacement.sessionId), null);
 });
 
 test("profile metadata ignores supplied credentials and never stores or returns them", () => {

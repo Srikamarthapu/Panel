@@ -112,6 +112,18 @@ export async function mockWorkspace(page, { sessions = [{ id: "qa-main", name: "
     if (parts[2] === "delegations" && method === "GET") return route.fulfill({ json: { delegations: delegated } });
     const agent = agentProfiles.get(parts[2]);
     if (!agent) return route.fulfill({ status: 404, json: { error: "Agent not found." } });
+    if (parts[3] === "session" && method === "POST") {
+      if (agent.archivedAt) return route.fulfill({ status: 409, json: { error: "Restore this agent before opening its conversation." } });
+      let record = records.get(agent.sessionId);
+      if (!record || record.session.archivedAt) {
+        const sessionId = `qa-agent-session-${++nextId}`;
+        const session = { id: sessionId, name: agent.name, workingDirectory: agent.workingDirectory, agentId: agent.id, pinned: false, archivedAt: null, createdAt: timestamp, updatedAt: timestamp };
+        record = { session, messages: [], activeRun: null, lastRun: null };
+        records.set(sessionId, record);
+        agent.sessionId = sessionId;
+      }
+      return route.fulfill({ json: { agent: publicAgent(agent), session: sessionSummary(record) } });
+    }
     if (parts.length === 3 && method === "GET") return route.fulfill({ json: { agent: { ...agent } } });
     if (parts.length === 3 && method === "PATCH") {
       const patch = request.postDataJSON(); requests.updatedAgents.push({ id: agent.id, patch });

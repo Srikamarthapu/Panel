@@ -94,7 +94,7 @@ test("profiles save separate SOUL, folder, provider, and model; edits and archiv
   await page.getByRole("button", { name: "Archived", exact: true }).click();
   const archived = profileCard(page, "Atlas");
   await expect(archived).toBeVisible();
-  await archived.getByRole("button", { name: "Restore", exact: true }).click();
+  await archived.getByRole("button", { name: "Restore agent", exact: true }).click();
   await expect(profileCard(page, "Atlas")).toHaveCount(0);
   await page.getByRole("button", { name: "Show active", exact: true }).click();
   await expect(profileCard(page, "Atlas")).toBeVisible();
@@ -121,7 +121,7 @@ test("running a saved profile leaves the main conversation selected and opens it
   expect(fixture.requests.agentRuns[0]).toMatchObject({ id: "atlas", sessionId: "atlas-session", text: "Compare the two proposals and report the strongest evidence." });
   expect(await page.evaluate(() => localStorage.getItem("panel.activeSession"))).toBe("qa-main");
 
-  await card.getByRole("button", { name: "Conversation", exact: true }).click();
+  await card.getByRole("button", { name: "Open conversation", exact: true }).click();
   await expect(page).toHaveURL(/\/chat$/);
   await expect(page.getByRole("combobox", { name: "Switch session" })).toHaveValue("atlas-session");
   await expect(page.getByRole("textbox", { name: "Message Atlas" })).toBeVisible();
@@ -130,6 +130,7 @@ test("running a saved profile leaves the main conversation selected and opens it
 });
 
 test("Talk restores only valid selected profiles and shows their real run states as Bloubs without starting work", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.addInitScript(() => {
     localStorage.setItem("panel.selectedAgents.v1", JSON.stringify(["atlas", "missing", "forge", "atlas"]));
     localStorage.setItem("hermes.talk.avatar", "orb");
@@ -150,6 +151,11 @@ test("Talk restores only valid selected profiles and shows their real run states
   const teammates = page.locator(".talkWorkspace__presence figure");
   await expect(teammates).toHaveCount(2);
   await expect(teammates.locator(".mcOrb--bloub")).toHaveCount(2);
+  await expect.poll(() => teammates.evaluateAll(nodes => nodes.map(node => node.getAttribute("data-companion-glow")))).toEqual(["true", "true"]);
+  await expect(page.locator(".talkWorkspace__presence")).toHaveAttribute("data-companion-float", "true");
+  await expect(page.locator(".talkWorkspace__presence")).toHaveAttribute("data-motion-active", "true");
+  const atlasPresence = teammates.filter({ hasText: "Atlas" });
+  await expect.poll(() => atlasPresence.locator('[data-bloub-role="body"]').evaluate(node => node.getBBox().width)).toBeGreaterThan(100);
   await expect(teammates.getByText("Checking primary sources", { exact: true })).toBeVisible();
   await expect(teammates.getByText("Last task complete", { exact: true })).toBeVisible();
   await expect(page.locator(".talkWorkspace__presence > .talkWorkspace__caption")).toContainText("Ready when you are.");
@@ -159,6 +165,16 @@ test("Talk restores only valid selected profiles and shows their real run states
   if (await agentsToggle.getAttribute("aria-expanded") === "true") await page.getByRole("button", { name: "Close agents" }).click();
   await expect(page.locator('.talkWorkspace__presence[data-main-avatar="orb"] > .talkWorkspace__caption')).toContainText("Ready when you are.");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(page.locator(".talkWorkspace__presence")).not.toHaveAttribute("data-companion-float", "true");
+  await page.evaluate(() => {
+    const next = { ...JSON.parse(localStorage.getItem("panel.interface.preferences") || "{}"), version: 1, motion: "full", companionFloat: true };
+    localStorage.setItem("panel.interface.preferences", JSON.stringify(next));
+    window.dispatchEvent(new CustomEvent("panel-interface-preferences-change", { detail: next }));
+  });
+  await expect(page.locator(".talkWorkspace__presence")).toHaveAttribute("data-motion-active", "true");
+  await expect.poll(() => teammates.first().evaluate(node => getComputedStyle(node).animationName)).toContain("companion-float");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByRole("button", { name: "Bloub", exact: true }).click();
   const bloubMain = page.locator('.talkWorkspace__presence[data-main-avatar="bloub"]');
