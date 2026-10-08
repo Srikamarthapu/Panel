@@ -107,7 +107,7 @@
 .sessionDialog footer { display:flex; justify-content:flex-end; gap:9px; margin-top:28px; }
 
 /* Hold-to-talk is the default; hands-free is an explicit alternative. */
-.talkWorkspace { grid-template-rows:56px minmax(285px,1fr) 235px; min-height:590px; }
+.talkWorkspace { grid-template-rows:auto minmax(min-content,1fr) auto; height:auto; min-height:max(590px,100%); }
 .talkWorkspace__footer { grid-template-rows:minmax(0,54px) auto 30px; }
 .talkWorkspace .voiceDock { gap:10px; }
 .voiceDock__modes { display:flex; align-items:center; justify-content:center; gap:3px; padding:3px; border:1px solid var(--line); border-radius:9px; width:max-content; margin:0 auto 12px; background:var(--panel); }
@@ -154,7 +154,7 @@
  .managedSession .sessionRow__aside { display:none; }
  .sessionDialog { padding:22px; }
  .sessionDialog input { font-size:16px; }
- .talkWorkspace { padding-inline:18px; --talk-orb-size:clamp(180px,28dvh,260px); min-height:580px; grid-template-rows:58px minmax(250px,1fr) 230px; }
+ .talkWorkspace { padding-inline:18px; --talk-orb-size:clamp(180px,28dvh,260px); height:auto; min-height:max(580px,100%); grid-template-rows:auto minmax(min-content,1fr) auto; }
 }
 @media(prefers-reduced-motion:reduce) { .agentsPane { animation:none; } }
 

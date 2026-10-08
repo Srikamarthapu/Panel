@@ -2,7 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { BotEngine, RAYON } from "../../components/avatar/bloub/vendor/bloub-engine.js";
 import { createBloubRenderer, PALETTE_INK } from "../../components/avatar/bloub/bloubRenderer.js";
-import { bloubStateFor } from "../../components/avatar/bloub/bloubState.js";
+import {
+  BLOUB_CAPTURING_EXPRESSION,
+  BLOUB_LISTENING_EXPRESSION,
+  BLOUB_NEUTRAL_EXPRESSION,
+  bloubExpressionFor,
+  bloubStateFor,
+  setBloubPresence,
+} from "../../components/avatar/bloub/bloubState.js";
 
 class TestElement {
   constructor(ownerDocument, tagName) {
@@ -66,6 +73,57 @@ function visible(nodes) {
 test("offline presence keeps the full Bloub face visible while errors stay distinct", () => {
   assert.equal(bloubStateFor("offline"), "idle");
   assert.equal(bloubStateFor("error"), "alert");
+});
+
+test("voice attention uses moderate centered expressions and morphs between them", () => {
+  assert.equal(bloubStateFor("listening"), "idle");
+  assert.equal(bloubStateFor("capturing"), "idle");
+  assert.equal(bloubStateFor("listening", { preserveBody: true }), "idle");
+  assert.equal(bloubStateFor("capturing", { preserveBody: true }), "idle");
+  assert.equal(bloubExpressionFor("listening"), BLOUB_LISTENING_EXPRESSION);
+  assert.equal(bloubExpressionFor("capturing"), BLOUB_CAPTURING_EXPRESSION);
+  assert.equal(bloubExpressionFor("idle"), BLOUB_NEUTRAL_EXPRESSION);
+
+  for (const expression of [BLOUB_LISTENING_EXPRESSION, BLOUB_CAPTURING_EXPRESSION]) {
+    assert.deepEqual([expression.gaze.yaw, expression.gaze.pitch], [0, 0]);
+    assert.ok(expression.eyes.every(({ w, h }) => w <= 0.24 && h <= 0.46), "voice eyes stay moderate");
+  }
+
+  const engine = new BotEngine(RAYON, "idle", null, BLOUB_NEUTRAL_EXPRESSION);
+  const neutralEye = engine.sample(0.6).eyes[0].d;
+  engine.setExpression(BLOUB_LISTENING_EXPRESSION, 0.6);
+  const listeningStart = engine.sample(0.6).eyes[0].d;
+  const listeningMiddle = engine.sample(0.825).eyes[0].d;
+  const listeningSettled = engine.sample(1.1).eyes[0].d;
+  assert.equal(listeningStart, neutralEye, "listening begins from the visible neutral face");
+  assert.notEqual(listeningMiddle, listeningStart, "listening eases toward attention");
+  assert.notEqual(listeningSettled, listeningMiddle, "listening continues through the expression morph");
+
+  engine.setExpression(BLOUB_CAPTURING_EXPRESSION, 1.1);
+  const captureStart = engine.sample(1.1).eyes[0].d;
+  const captureMiddle = engine.sample(1.325).eyes[0].d;
+  const captureSettled = engine.sample(1.6).eyes[0].d;
+  assert.equal(captureStart, listeningSettled, "capturing continues from the listening face");
+  assert.notEqual(captureMiddle, captureStart, "capture has a distinct transition");
+  assert.notEqual(captureSettled, captureMiddle, "capture settles without a static face swap");
+});
+
+test("leaving voice attention preserves its visible face as the upstream state morph origin", () => {
+  const engine = new BotEngine(RAYON, "idle", null, BLOUB_NEUTRAL_EXPRESSION);
+  setBloubPresence(engine, "listening", 0);
+  const listening = engine.sample(0.6);
+  setBloubPresence(engine, "transcribing", 0.6);
+  const transitionStart = engine.sample(0.6);
+  const transcribing = engine.sample(1.2);
+
+  assert.equal(transitionStart.bodyPath, listening.bodyPath);
+  assert.deepEqual(transitionStart.eyes, listening.eyes, "the outgoing listening face does not jump to neutral");
+  assert.equal(transcribing.eyes.length, 0, "the upstream thinking glyph owns its settled face");
+
+  setBloubPresence(engine, "idle", 1.2);
+  const returned = engine.sample(1.8);
+  const neutral = new BotEngine(RAYON, "idle", null, BLOUB_NEUTRAL_EXPRESSION).sample(1.8);
+  assert.equal(returned.eyes[0].d, neutral.eyes[0].d, "returning idle restores the neutral expression");
 });
 
 test("inline companions keep a full body during active and attention states", () => {

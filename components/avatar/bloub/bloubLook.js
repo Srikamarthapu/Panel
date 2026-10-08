@@ -1,5 +1,10 @@
 /** The engine's idle look lets its own pose and ambient motion show through. */
 export const BLOUB_IDLE_LOOK = Object.freeze({ yaw: 0, pitch: 0, mix: 0, spin: 0, wander: 1 });
+export const BLOUB_CENTERED_LOOK = Object.freeze({ yaw: 0, pitch: 0, mix: 1, spin: 0, wander: 0 });
+
+export function bloubLookForState(state) {
+  return state === "listening" || state === "capturing" ? BLOUB_CENTERED_LOOK : null;
+}
 
 const MAX_SMOOTHING_DELTA = 0.064;
 const LOOK_TIME_CONSTANT = 0.045;

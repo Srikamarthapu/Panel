@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-08T04:04:19.170Z",
+  "generatedAt": "2026-10-08T05:11:08.956Z",
   "files": [
     {
       "path": ".env.example",
@@ -33,8 +33,8 @@
     },
     {
       "path": "RELEASE-CHECKS.md",
-      "sha256": "33af5bd0b9682644da32562527a0c67444d52bebffc8c3f9b8338cdf23c97665",
-      "bytes": 7550
+      "sha256": "84363546dac3d7bd911249ced9ec6140c53bdc0d5a3e0e6da552599a1bd8107d",
+      "bytes": 8470
     },
     {
       "path": "SECURITY.md",
@@ -253,8 +253,8 @@
     },
     {
       "path": "app/conversation.css",
-      "sha256": "b685d9fc51447308610e11063b6b9c733d1fe3c2d23397614a7529f1caf4dbb2",
-      "bytes": 24295
+      "sha256": "6d94ed6110d39872883ae6d8079ae1a4a352fd60a3eb439fc07c3f8c0e0e5c02",
+      "bytes": 24334
     },
     {
       "path": "app/dev/voice-lifecycle/page.jsx",
@@ -393,8 +393,8 @@
     },
     {
       "path": "app/workspace-refinement.css",
-      "sha256": "daef10e0013d4f3548196b67d37dd74661ddd40be53bcfaf52647f63fb9721d8",
-      "bytes": 18126
+      "sha256": "fd21385a3245ca964739f5336559e0fdc2ebe694b3135b3f8c26196c2fea1fa4",
+      "bytes": 18182
     },
     {
       "path": "app/workspace/[id]/page.jsx",
@@ -418,13 +418,13 @@
     },
     {
       "path": "components/avatar/bloub/BloubAvatar.jsx",
-      "sha256": "926fab7894506f43f88e7a83ec0b888627d64f9091a1d49b234c19af59911a0e",
-      "bytes": 6033
+      "sha256": "ae7ba0d268a05ebc5f96ee158d0b6cf6c8c9bc3c725bea5f663bca80699a5280",
+      "bytes": 6200
     },
     {
       "path": "components/avatar/bloub/bloubLook.js",
-      "sha256": "d3c8ddd1e3e90a7035708484e18e83b569aa0f84f0620e649e598aef5a84494f",
-      "bytes": 1774
+      "sha256": "fd313ed78411e192608545546b1a02781bd74e398d541eecf3ca6b875501fd71",
+      "bytes": 2006
     },
     {
       "path": "components/avatar/bloub/bloubRenderer.js",
@@ -433,8 +433,8 @@
     },
     {
       "path": "components/avatar/bloub/bloubState.js",
-      "sha256": "290e936625509ece49024a4ac573881f94c6d932a68ec3bd1417a2c7c593beef",
-      "bytes": 1089
+      "sha256": "f2d7e2dcdbcd1515baf8ebf6b0b5cdab586d9b521439045bf29e7266bcdd7065",
+      "bytes": 3041
     },
     {
       "path": "components/avatar/bloub/vendor/LICENSE.bloub",
@@ -698,13 +698,13 @@
     },
     {
       "path": "components/work/AgentEnsemble.jsx",
-      "sha256": "01db5f4f281eeac42d30bfb0d2604cdc183ce559dca42a210539295be4d67399",
-      "bytes": 3592
+      "sha256": "9f336a087968a1c6db2b55db77118b6f9d5fba5b6b08f5a452c4480614c9373c",
+      "bytes": 3337
     },
     {
       "path": "components/work/AgentEnsemble.module.css",
-      "sha256": "0cbe5e6f76fc954c6c6e1c58b508a64d02966aea46c6d0763313cba5b29ebc65",
-      "bytes": 3923
+      "sha256": "8d574697ee996977fb4ffaaa11170c7ac52a64569e5c1631829b83fc756a3de2",
+      "bytes": 5413
     },
     {
       "path": "components/work/AgentProfileDialog.jsx",
@@ -823,8 +823,8 @@
     },
     {
       "path": "docs/panel-interface-audit.md",
-      "sha256": "bee4ad8ae03784ec12aa0c3e349c486566f05fce2a2379ff1abd6059895a8618",
-      "bytes": 14841
+      "sha256": "31db347cb8ff52ffa5c4fb601f38fc55733aeee9bbc83fd4f74c2eed759cc0d4",
+      "bytes": 15969
     },
     {
       "path": "docs/workspace-tabs.md",
@@ -1088,12 +1088,12 @@
     },
     {
       "path": "package-lock.json",
-      "sha256": "0cfbacbfdf223825f4240e8ddc49da3df253931971a0df6451571d1c0ab33ced",
+      "sha256": "beb48acbf880b8390cab9c4b417345f5984f9cd30d4ea66cce1825f14d52cf58",
       "bytes": 45056
     },
     {
       "path": "package.json",
-      "sha256": "bc01a97c6eef6391b49130f68add213fe610ea2fc9a537b86d73b11101265da5",
+      "sha256": "8cacd3c60eb541d7f0f913dc17bddc5825169a2889d399a40189673c17862346",
       "bytes": 1252
     },
     {
@@ -1372,9 +1372,19 @@
       "bytes": 6086
     },
     {
+      "path": "tests/e2e/bloub-listening.spec.js",
+      "sha256": "47e2adb0a782d086a521e38ce6fae316df1b6e90811e80ef7ed4e25c758e87ce",
+      "bytes": 5550
+    },
+    {
       "path": "tests/e2e/bloub-tracking.spec.js",
       "sha256": "b54de027063d2a853bd2c64f7e7621c930d0f3a8c01f59be989e3562856f170e",
       "bytes": 5038
+    },
+    {
+      "path": "tests/e2e/companion-layout.spec.js",
+      "sha256": "bd75cb1edea519cdfaff1456cc88446cc9aea5409f111ecf9cedf582bf6c8627",
+      "bytes": 5047
     },
     {
       "path": "tests/e2e/interface-preferences.spec.js",
@@ -1593,13 +1603,13 @@
     },
     {
       "path": "tests/unit/bloub-look.test.js",
-      "sha256": "6e67e482d9bb427c4d80de49c58297f18c09ca431fc24af0bf3b73d0882cb88b",
-      "bytes": 5221
+      "sha256": "c0e7b5210f14f0b35fa1bb1bff9a4925346c96b9a83cb9632d44d75d1e0e5103",
+      "bytes": 6367
     },
     {
       "path": "tests/unit/bloub-renderer.test.js",
-      "sha256": "66fed23cf20b21b77f1124b2523722a5b396364f55dfa01df588eaf51301d326",
-      "bytes": 6171
+      "sha256": "22a78c475fea3a0fe7329fc866986ddec626d08be4f8d0b64bfcee79c99614f7",
+      "bytes": 9257
     },
     {
       "path": "tests/unit/capabilities.test.js",

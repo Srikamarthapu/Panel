@@ -3,9 +3,9 @@
 import { useEffect, useId, useRef } from "react";
 import { useReducedMotion } from "motion/react";
 import { BotEngine, DEMI_VIEWBOX, RAYON } from "./vendor/bloub-engine.js";
-import { BLOUB_IDLE_LOOK, bloubPointerLook, bloubSmoothLook } from "./bloubLook.js";
+import { BLOUB_IDLE_LOOK, bloubLookForState, bloubPointerLook, bloubSmoothLook } from "./bloubLook.js";
 import { createBloubRenderer } from "./bloubRenderer.js";
-import { bloubStateFor } from "./bloubState.js";
+import { bloubExpressionFor, bloubStateFor, setBloubPresence } from "./bloubState.js";
 
 export { bloubStateFor } from "./bloubState.js";
 
@@ -28,7 +28,12 @@ export default function BloubAvatar({
   colorRef.current = color;
   const uid = `bloub-${useId().replaceAll(":", "")}`;
 
-  if (!engineRef.current) engineRef.current = new BotEngine(RAYON, bloubStateFor(state, { preserveBody }));
+  if (!engineRef.current) engineRef.current = new BotEngine(
+    RAYON,
+    bloubStateFor(state, { preserveBody }),
+    null,
+    bloubExpressionFor(state),
+  );
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -39,8 +44,9 @@ export default function BloubAvatar({
       rendererRef.current = createBloubRenderer(svg, uid, colorRef.current);
     }
     const renderer = rendererRef.current;
-    engine.setState(bloubStateFor(state, { preserveBody }), clockRef.current);
-    engine.setLook(null, clockRef.current, 0.24);
+    const stateLook = bloubLookForState(state);
+    setBloubPresence(engine, state, clockRef.current, { preserveBody });
+    engine.setLook(stateLook, clockRef.current, 0.2);
 
     let frameId = null;
     let disposed = false;
@@ -63,7 +69,7 @@ export default function BloubAvatar({
       pointerPoint = null;
       currentLook = { ...BLOUB_IDLE_LOOK };
       lastLookAt = clockRef.current;
-      engine.setLook(null, clockRef.current);
+      engine.setLook(stateLook, clockRef.current, 0.2);
     };
 
     const paint = () => {

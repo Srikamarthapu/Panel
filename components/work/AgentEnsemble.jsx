@@ -10,7 +10,8 @@ import styles from "./AgentEnsemble.module.css";
 function SideAgent({ agent, order, glow }) {
   const status = workAgentPresence(agent);
   const color = AVATAR_PALETTES[agent.color]?.color || AVATAR_PALETTES.sage.color;
-  return <figure className={styles.sideAgent} data-active={status.active || undefined} data-companion-glow={glow || undefined} style={{ "--companion-order": order, "--companion-glow-color": color }}>
+  const side = order % 2 === 0 ? "left" : "right";
+  return <figure className={styles.sideAgent} data-side={side} data-active={status.active || undefined} data-companion-glow={glow || undefined} style={{ "--companion-order": order, "--companion-row": Math.floor(order / 2) + 1, "--companion-glow-color": color }}>
     <div className={styles.sideAvatar}><MissionOrb size="inline" avatar="bloub" agentName={agent.name} voiceState="idle" activity={{ state: status.state, label: status.label, isStale: false }} color={agent.color || "sage"} pointerFollowing={false} preserveBloubBody /></div>
     <figcaption><strong title={agent.name}>{agent.name}</strong><span title={status.label} role={status.active ? "status" : undefined}>{status.label}</span></figcaption>
   </figure>;
@@ -28,9 +29,6 @@ export default function AgentEnsemble({ avatar, mainName = "Hermes", presence, a
   const stageRef = useRef(null);
   const [stageVisible, setStageVisible] = useState(false);
   const { preferences, reducedMotion } = useInterfacePreferences();
-  const indexed = agents.map((agent, index) => ({ agent, index }));
-  const left = indexed.filter(({ index }) => index % 2 === 0);
-  const right = indexed.filter(({ index }) => index % 2 === 1);
   const floatEnabled = preferences.companionFloat && !reducedMotion;
 
   useEffect(() => {
@@ -48,11 +46,10 @@ export default function AgentEnsemble({ avatar, mainName = "Hermes", presence, a
 
   return <div className={`talkWorkspace__presence ${styles.ensemble}`} data-main-avatar={avatar} data-agent-count={agents.length} data-companion-float={floatEnabled || undefined} data-motion-active={floatEnabled && stageVisible || undefined}>
     <div className={styles.stage} ref={stageRef}>
-      <div className={styles.sideColumn}>{left.map(({ agent, index }) => <SideAgent key={agent.id} agent={agent} order={index} glow={preferences.companionGlow} />)}</div>
       <div className={styles.main}>
         <div className="talkWorkspace__orb"><MissionOrb size="hero" activity={presence.avatarActivity} avatar={avatar} agentName={mainName} /></div>
       </div>
-      <div className={styles.sideColumn}>{right.map(({ agent, index }) => <SideAgent key={agent.id} agent={agent} order={index} glow={preferences.companionGlow} />)}</div>
+      <div className={styles.companions}>{agents.map((agent, index) => <SideAgent key={agent.id} agent={agent} order={index} glow={preferences.companionGlow} />)}</div>
     </div>
     <MainStatus presence={presence} />
   </div>;

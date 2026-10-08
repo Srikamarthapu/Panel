@@ -3,7 +3,7 @@
 .controlShell[data-route=chat] .workspaceFrame,.controlShell[data-route=overview] .workspaceFrame { display:grid; grid-template-rows:72px minmax(0,1fr); min-height:0; }
 .controlShell[data-route=chat] .stage,.controlShell[data-route=overview] .stage { height:100%; min-height:0; overflow:auto; }
 
-.talkWorkspace { --talk-orb-size:clamp(230px,34dvh,360px); display:grid; grid-template-rows:56px minmax(330px,1fr) 208px; height:100%; min-height:650px; padding:26px 40px 18px; }
+.talkWorkspace { --talk-orb-size:clamp(230px,34dvh,360px); display:grid; grid-template-rows:auto minmax(min-content,1fr) auto; height:auto; min-height:max(650px,100%); padding:26px 40px 18px; }
 .talkWorkspace__header { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; }
 .talkWorkspace__tools { display:flex; align-items:center; gap:9px; }
 .avatarSwitch { display:flex; align-items:center; padding:3px; border:1px solid var(--line); border-radius:10px; background:oklch(from #151b17 l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue))); }
@@ -14,7 +14,7 @@
 .talkWorkspace__header p { margin:8px 0 0; font-size:12px; color:var(--fg-2); }
 .talkWorkspace__header .quietLink { min-height:40px; padding:0 11px; border:1px solid var(--line); border-radius:9px; color:oklch(from #b8c2bb l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue))); font-size:12px; }
 .talkWorkspace__header .quietLink:hover { background:var(--bg-2); }
-.talkWorkspace__presence { display:grid; align-content:center; justify-items:center; grid-template-rows:var(--talk-orb-size) 106px; gap:12px; min-height:0; }
+.talkWorkspace__presence { display:grid; align-content:center; justify-items:center; grid-template-rows:auto 106px; gap:12px; min-height:min-content; }
 .talkWorkspace__orb,.talkWorkspace .mcOrb[data-size=hero] { width:var(--talk-orb-size); height:var(--talk-orb-size); }
 .mcOrb--bloub { display:grid; place-items:center; }
 .bloubAvatar { display:block; width:100%; height:100%; overflow:visible; filter:drop-shadow(0 18px 38px rgba(0,0,0,.2)); }
@@ -135,7 +135,7 @@
 .conversationPastError p { color:#b5a493; font-size:12px; line-height:1.65; margin:5px 0; }
 
 @media(max-height:800px) and (min-width:681px) {
- .talkWorkspace { --talk-orb-size:230px; min-height:630px; padding-top:20px; grid-template-rows:48px minmax(344px,1fr) 200px; }
+ .talkWorkspace { --talk-orb-size:230px; min-height:max(630px,100%); padding-top:20px; grid-template-rows:auto minmax(min-content,1fr) auto; }
  .talkWorkspace__presence { gap:5px; }
  .talkWorkspace__caption h2 { font-size:28px; margin-top:10px; }
  .conversationHeader { padding-top:17px; padding-bottom:15px; }
@@ -150,7 +150,7 @@
  .controlShell[data-route=chat] .workspaceFrame,.controlShell[data-route=overview] .workspaceFrame { grid-template-rows:52px minmax(0,1fr); }
  .controlNav nav.controlNav__primary { grid-template-columns:repeat(5,minmax(0,1fr)); }
  .controlNav__link,.is-collapsed .controlNav__link { font-size:9px; }
- .talkWorkspace { --talk-orb-size:225px; height:100%; min-height:630px; padding:20px 18px 12px; grid-template-rows:48px minmax(340px,1fr) 200px; }
+ .talkWorkspace { --talk-orb-size:225px; height:auto; min-height:max(630px,100%); padding:20px 18px 12px; grid-template-rows:auto minmax(min-content,1fr) auto; }
  .talkWorkspace__header h1 { font-size:22px; }
  .talkWorkspace__header .quietLink { font-size:0; min-width:40px; }
  .talkWorkspace__tools { gap:6px; }

@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  BLOUB_CENTERED_LOOK,
   BLOUB_IDLE_LOOK,
+  bloubLookForState,
   bloubPointerLook,
   bloubSmoothLook,
 } from "../../components/avatar/bloub/bloubLook.js";
@@ -66,6 +68,26 @@ test("pointer gaze points toward the cursor in SVG screen coordinates", () => {
   assert.equal(center.wander, 0);
   assert.equal(bloubPointerLook({ x: NaN, y: 3 }, bounds, viewport), null);
   assert.equal(bloubPointerLook({ x: 2, y: 3 }, { width: 0 }, viewport), null);
+});
+
+test("listening and capturing replace stale pointer gaze with a centered target", () => {
+  assert.equal(bloubLookForState("listening"), BLOUB_CENTERED_LOOK);
+  assert.equal(bloubLookForState("capturing"), BLOUB_CENTERED_LOOK);
+  assert.equal(bloubLookForState("idle"), null);
+  assert.deepEqual(BLOUB_CENTERED_LOOK, { yaw: 0, pitch: 0, mix: 1, spin: 0, wander: 0 });
+
+  const engine = new BotEngine(RAYON, "idle");
+  const pointer = pointerAt(700, 420);
+  engine.setLook(pointer, 0, 0.01);
+  const pointerCenter = projectedEyeCenter(engine.sample(0.01));
+  engine.setLook(BLOUB_CENTERED_LOOK, 0.01, 0.2);
+  const transitionCenter = projectedEyeCenter(engine.sample(0.11));
+  const centered = projectedEyeCenter(engine.sample(0.21));
+  const directCenter = sampleLook(BLOUB_CENTERED_LOOK, 0.2);
+  assert.ok(Math.hypot(transitionCenter.x - directCenter.x, transitionCenter.y - directCenter.y)
+    < Math.hypot(pointerCenter.x - directCenter.x, pointerCenter.y - directCenter.y));
+  assert.ok(Math.abs(centered.x - directCenter.x) < 0.01);
+  assert.ok(Math.abs(centered.y - directCenter.y) < 0.01);
 });
 
 test("sampled SVG eye centers move right and down toward the pointer", () => {
