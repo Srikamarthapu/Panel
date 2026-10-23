@@ -8,8 +8,8 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "sha256": "2083464c5efe5de55957827392fae8d5e097a484e805e9fa3c7f4ba9e8d98024",
-      "bytes": 891
+      "sha256": "1e7ff704fbb49b56ca7caf4fbb7ea3937de38769bc322f4b945f09bae2ea031d",
+      "bytes": 946
     },
     {
       "path": "CONTRIBUTING.md",
