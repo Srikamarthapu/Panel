@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export default function useModelCatalog() {
+export default function useModelCatalog(enabled = true) {
   const [catalog, setCatalog] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -55,9 +55,10 @@ export default function useModelCatalog() {
   }, []);
 
   useEffect(() => {
+    if (!enabled) { setLoading(false); return undefined; }
     load();
     return () => requestRef.current?.abort();
-  }, [load]);
+  }, [enabled, load]);
 
   return { catalog, loading, refreshing, error, warning, load };
 }

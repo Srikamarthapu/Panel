@@ -14,8 +14,24 @@ async function modelFixture(page) {
       { id: "anthropic", label: "Anthropic", configured: false, models: [{ id: "not-connected" }] },
     ],
   };
-  const requests = { assignments: [], probes: [], voiceWrites: [] };
+  const requests = { assignments: [], probes: [], resolutionPatches: [] };
+  const preferences = { version: 1, migration: "mocked-api-runtime", chat: { mode: "pin", provider: "deepseek", model: "deepseek-chat", reasoningEffort: "low" }, talk: { mode: "pin", provider: "deepseek", model: "deepseek-chat", reasoningEffort: "low" } };
+  const resolution = surface => {
+    const choice = preferences[surface], pinned = choice.mode === "pin";
+    const selected = pinned ? choice : catalog.current;
+    return { surface, executionMode: "hermes", requestedProvider: selected.provider, requestedModel: selected.model, friendlyName: selected.model, label: selected.model, origin: pinned ? "surface" : "main", originLabel: pinned ? `Pinned for ${surface === "chat" ? "Chat" : "Talk"}` : "Main model", reasoningEffort: choice.reasoningEffort || "", followsMain: !pinned };
+  };
   await page.route("**/api/models/catalog**", route => route.fulfill({ json: catalog }));
+  await page.route("**/api/models/resolution**", route => {
+    const request = route.request();
+    if (request.method() === "PATCH") {
+      const body = request.postDataJSON(); requests.resolutionPatches.push(body);
+      preferences[body.surface] = body.mode === "pin" ? { mode: "pin", provider: body.provider, model: body.model, reasoningEffort: body.reasoningEffort || "" } : { mode: "follow-main", provider: "", model: "", reasoningEffort: "" };
+      return route.fulfill({ json: { resolution: resolution(body.surface), preferences } });
+    }
+    const surface = new URL(request.url()).searchParams.get("surface") === "talk" ? "talk" : "chat";
+    return route.fulfill({ json: { resolution: resolution(surface), preferences } });
+  });
   await page.route("**/api/models/router", route => route.fulfill({ json: { configured: false, enabled: false, stats: {} } }));
   await page.route("**/api/models/switch", route => {
     const body = route.request().postDataJSON(); requests.assignments.push(body);
@@ -23,10 +39,6 @@ async function modelFixture(page) {
     else if (body.role === "fallback") catalog.current.fallback = { provider: body.provider, model: body.model };
     else { catalog.current.provider = body.provider; catalog.current.model = body.model; }
     return route.fulfill({ json: { ok: true } });
-  });
-  await page.route("**/api/voice/chat", route => {
-    if (route.request().method() === "PUT") { requests.voiceWrites.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } }); }
-    return route.fulfill({ status: 503, json: { error: "Unexpected conversation request" } });
   });
   await page.route("**/api/models/probe", route => {
     const body = route.request().postDataJSON(); requests.probes.push(body);
@@ -81,7 +93,7 @@ test("Models starts with current provider and saved choices without an unverifie
   const { requests } = await modelFixture(page);
   await expect(page.getByRole("heading", { name: "DeepSeek", exact: true })).toBeVisible();
   await expect(page.getByText("Access unverified", { exact: true })).toHaveCount(0);
-  await expect(row(page, "deepseek-main").locator(".modelAccessBadge")).toHaveText("Configured");
+  await expect(row(page, "deepseek-main").locator(".modelAccessBadge")).toHaveText("Not tested");
   await expect(row(page, "deepseek-main")).toHaveAttribute("data-selected", "true");
   await expect(page.getByText("discovery-0", { exact: true })).toHaveCount(0);
   await expect(page.getByText("old-embedding", { exact: true })).toHaveCount(0);
@@ -93,20 +105,21 @@ test("Models starts with current provider and saved choices without an unverifie
   expect(requests.assignments).toEqual([]);
 });
 
-test("backup and inherited conversation choices update the intended role only", async ({ page }) => {
+test("backup and inherited Chat choices update the intended role only", async ({ page }) => {
   const { catalog, requests } = await modelFixture(page);
+  await expect(page.getByRole("button", { name: /^Chat / })).toContainText("Pinned");
   await page.getByRole("button", { name: /^Backup model / }).click();
   await expect(page.getByRole("heading", { name: "Remote provider", exact: true })).toBeVisible();
   await row(page, "remote-next").getByRole("button", { name: "Use as backup" }).click();
   await expect(row(page, "remote-next")).toHaveAttribute("data-selected", "true");
   expect(catalog.current.model).toBe("deepseek-main");
   expect(requests.assignments[0]).toEqual({ provider: "remote", model: "remote-next", role: "fallback" });
-  await page.getByRole("button", { name: /^Talk & Chat / }).click();
-  await page.getByRole("button", { name: "Use main model", exact: true }).click();
-  await expect(page.getByRole("button", { name: /^Talk & Chat / })).toContainText("Follow main model");
-  await expect(row(page, "deepseek-main")).toContainText("Following main");
-  expect(requests.assignments[1]).toEqual({ provider: "", model: "", role: "voice" });
-  expect(requests.voiceWrites).toEqual([]);
+  await page.getByRole("button", { name: /^Chat / }).click();
+  await page.getByRole("button", { name: "Follow Main", exact: true }).click();
+  await expect(page.getByRole("button", { name: /^Chat / })).toContainText("deepseek-main");
+  await expect(page.getByRole("button", { name: /^Chat / })).toContainText("Following Main");
+  await expect(row(page, "deepseek-main")).toContainText("Following Main");
+  expect(requests.resolutionPatches[0]).toMatchObject({ surface: "chat", mode: "follow-main", sessionId: "qa-main" });
 });
 
 test("an explicit access test records an exact model result without changing assignments", async ({ page }) => {
@@ -114,11 +127,11 @@ test("an explicit access test records an exact model result without changing ass
   const model = row(page, "deepseek-main");
   await model.locator("summary").click();
   await model.getByRole("button", { name: "Test access", exact: true }).click();
-  await expect(model.locator(".modelAccessBadge")).toHaveText("Configured · test passed");
+  await expect(model.locator(".modelAccessBadge")).toHaveText("Test passed");
   expect(requests.probes).toEqual([{ provider: "deepseek", model: "deepseek-main" }]);
   expect(requests.assignments).toEqual([]);
   await page.reload();
-  await expect(row(page, "deepseek-main").locator(".modelAccessBadge")).toHaveText("Configured · test passed");
+  await expect(row(page, "deepseek-main").locator(".modelAccessBadge")).toHaveText("Test passed");
 });
 
 test("provider setup is deliberate and native providers don't expose a misleading direct test", async ({ page }) => {
@@ -164,8 +177,8 @@ test("an exact custom ID is validated and remains visible as the new saved assig
   await page.getByRole("textbox", { name: "Model ID", exact: true }).fill("private-chat-alias");
   await page.getByRole("button", { name: "Save main model", exact: true }).click();
   await expect(row(page, "private-chat-alias")).toHaveAttribute("data-selected", "true");
-  await expect(row(page, "private-chat-alias").locator(".modelAccessBadge")).toHaveText("Configured");
-  expect(requests.assignments).toEqual([{ provider: "deepseek", model: "private-chat-alias", role: "primary" }]);
+  await expect(row(page, "private-chat-alias").locator(".modelAccessBadge")).toHaveText("Not tested");
+  expect(requests.assignments).toEqual([{ provider: "deepseek", model: "private-chat-alias", role: "primary", sessionId: "qa-main" }]);
 });
 
 test("catalog failures preserve saved choices and offer a working retry", async ({ page }) => {
@@ -178,7 +191,7 @@ test("catalog failures preserve saved choices and offer a working retry", async 
   failed = false;
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(page.locator(".modelWorkspaceV2").getByRole("alert")).toHaveCount(0);
-  await expect(row(page, "deepseek-main").locator(".modelAccessBadge")).toHaveText("Configured");
+  await expect(row(page, "deepseek-main").locator(".modelAccessBadge")).toHaveText("Not tested");
 });
 
 
@@ -188,9 +201,26 @@ test("an initial catalog failure does not invent model assignments", async ({ pa
   await page.reload();
   await expect(page.locator(".modelWorkspaceV2").getByRole("alert")).toContainText("Catalog temporarily unavailable");
   const assignments = page.locator(".modelAssignments");
-  await expect(assignments.getByText("Could not load", { exact: true })).toHaveCount(3);
-  await expect(assignments.getByText("Follow main model", { exact: true })).toHaveCount(0);
+  await expect(assignments.getByText("Could not load", { exact: true })).toHaveCount(2);
+  await expect(assignments.getByText("deepseek-chat", { exact: true })).toHaveCount(2);
   await expect(assignments.getByText("Not set", { exact: true })).toHaveCount(0);
   await expect(assignments.getByText("Configured", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Connect a provider in Hermes to get started.", { exact: true })).toHaveCount(0);
+});
+
+test("Voice settings links to Models without exposing a duplicate model editor", async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto("/voice");
+  await expect(page.getByRole("link", { name: /Open Models/ })).toBeVisible();
+  await expect(page.getByLabel("Conversation model")).toHaveCount(0);
+  await expect(page.getByLabel("Conversation provider")).toHaveCount(0);
+});
+
+test("the workspace header never duplicates a second model label", async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto("/models");
+  await expect(page.locator(".modelPill")).toHaveCount(0);
+  await page.goto("/chat");
+  await expect(page.locator(".modelPill")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /test-model Main model/ })).toBeVisible();
 });

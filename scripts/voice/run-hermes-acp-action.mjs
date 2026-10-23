@@ -1,23 +1,25 @@
 #!/usr/bin/env node
 import fs from "node:fs";
-import { beginAssistantRun, finishAssistantExecution, getAssistantRun, recordJevDecision, requestFileForRun, updateAssistantRun } from "../../lib/assistant-runs.js";
+import { beginAssistantRun, finalizeAssistantRun, finishAssistantExecution, getAssistantRun, recordAssistantRunToolEvent, recordJevDecision, requestFileForRun, updateAssistantRun } from "../../lib/assistant-runs.js";
 import { connectRuntime } from "../../lib/hermes-acp-runtime.js";
 import { appendAssistantText } from "../../lib/assistant-stream.js";
 import { readHermesResult, friendlyRunError } from "../../lib/hermes-run-protocol.js";
 import { publicReplyText } from "../../lib/publicReply.js";
+import { MAX_ASSISTANT_TEXT } from "../../lib/conversation-limits.js";
 import { addVoiceActivity } from "../../lib/voiceActivity.js";
 import { routeControlModel } from "./jev-control-route.mjs";
 
 const id = process.argv[2];
-let socket, payload, finished = false, stopped = false, authoritativeResult = false;
+let socket, payload, finished = false, stopped = false, authoritativeResult = false, latestPartial = "";
 const activity = input => { try { addVoiceActivity({ sessionId: payload.sessionId, source: "voice/action", textOnly: payload.textOnly, ...input }); } catch {} };
 function stop() { stopped = true; socket?.destroy(); }
 process.on("SIGTERM", stop);
 process.on("SIGINT", stop);
 function finish(value) {
   if (finished || stopped) return;
+  const partialResponse = value.state === "complete" ? "" : publicReplyText(latestPartial).trim().slice(0, MAX_ASSISTANT_TEXT);
+  const run = finalizeAssistantRun(id, { ...value, partialResponse, permission: null, toolProgress: null });
   finished = true;
-  const run = updateAssistantRun(id, { ...value, permission: null, toolProgress: null });
   if (!run || run.state === "cancelled") return;
   activity({ id: `${id}:${run.state === "complete" ? "complete" : "failed"}`, kind: run.state === "complete" ? "tool" : "error", state: run.state, title: run.state === "complete" ? "Hermes answered" : "Request needs attention", summary: run.response || run.error, target: "hermes" });
 }
@@ -56,10 +58,12 @@ async function main() {
           if (safe.startsWith(emitted) && safe.length > emitted.length) {
             appendAssistantText(id, { seq: ++seq, text: safe.slice(emitted.length), messageId });
             emitted = safe;
+            latestPartial = emitted;
           }
           if (Date.now() - lastWrite > 500) { updateAssistantRun(id, { statusLabel: "Composing a reply…" }); lastWrite = Date.now(); }
         } else if (["tool_call", "tool_call_update"].includes(update.sessionUpdate)) {
           toolsSinceMessage = true;
+          recordAssistantRunToolEvent(id, update);
           const callId = String(update.toolCallId || "");
           const previous = toolCalls.get(callId) || {};
           // Hermes emits tool_call from its actual tool.started callback, but

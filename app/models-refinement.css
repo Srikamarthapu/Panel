@@ -1,6 +1,6 @@
 /* Models: assignments first, connected choices second, discovery by request. */
 .modelWorkspaceV2 { gap: 26px; }
-.modelWorkspaceV2 .modelAssignments { gap: 14px; }
+.modelWorkspaceV2 .modelAssignments { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .modelWorkspaceV2 .modelAssignment { padding: 20px; gap: 10px; background: oklch(from #171b18 l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue))); border-color: oklch(from #323b35 l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue))); transition: border-color .16s ease, background .16s ease; }
 .modelWorkspaceV2 .modelAssignment:hover { border-color: oklch(from #66786a l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue))); }
 .modelWorkspaceV2 .modelAssignment[aria-pressed=true] { background: oklch(from #233229 l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue))); border-color: oklch(from #7f9e88 l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue))); }
@@ -63,6 +63,7 @@
 .modelConnectionHelp { padding: 16px; background: #25281d; border: 1px solid #575b3d; border-radius: 9px; }
 .modelConnectionHelp strong { display: block; font-size: 13px; font-weight: 500; color: #e4e5ce; }
 .modelConnectionHelp p { font-size: 12px; color: #cfceb7; line-height: 1.6; margin: 8px 0 0; }
+.modelConnectionHelp a { display: inline-block; margin-top: 10px; color: #e4e5ce; font-size: 12px; text-underline-offset: 3px; }
 .modelUnavailableToggle { display: flex; align-items: center; gap: 8px; color: oklch(from #bac5bd l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue))); font-size: 11px; }
 .modelUnavailableToggle input { accent-color: oklch(from #aacfb6 l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue))); }
 .modelWorkspaceV2 .modelCustom { background: oklch(from #171d19 l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue))); border-color: oklch(from #37433a l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue))); }
@@ -75,6 +76,7 @@
 .modelRoutingDetails[open] > summary > svg { transform: rotate(90deg); }
 .modelWorkspaceV2 :is(button, input, select, summary):focus-visible { outline: 2px solid oklch(from #b5d8c0 l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue))); outline-offset: 3px; }
 @media (max-width: 900px) {
+  .modelWorkspaceV2 .modelAssignments { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .modelWorkspaceV2 .modelCatalogLayout { grid-template-columns: 170px minmax(0,1fr); gap: 20px; }
 }
 @media (max-width: 700px) {

@@ -4,7 +4,7 @@ import { mockWorkspace } from "../helpers/workspace.js";
 
 test.beforeEach(async ({ page }) => mockWorkspace(page));
 
-for (const route of ["/", "/chat", "/sessions", "/tasks", "/tools"]) {
+for (const route of ["/", "/chat", "/sessions", "/tasks", "/tools", "/settings"]) {
   test(`accessible shell and contrast at ${route}`, async ({ page }) => {
     await page.goto(route);
     await expect(page.locator(".controlShell")).toBeVisible();

@@ -21,7 +21,8 @@ test("native custom tab persists the latest edit and keeps Hermes behind exact r
   const actionRequests = [], putRequests = [], savedStates = [];
   let releaseFirstSave;
   const firstSaveGate = new Promise(resolve => { releaseFirstSave = resolve; });
-  let currentRun = null, actionPolls = 0, stopCount = 0, stopFailed = false, failNextPoll = false, failSaves = false;
+  let currentRun = { id: "background-tab-run", sessionId: "tab-execution", state: "active", statusLabel: "Restoring tab status", response: "" };
+  let actionPolls = 0, stopCount = 0, stopFailed = false, failNextPoll = false, failInitialStatusPoll = true, initialStatusPolls = 0, failSaves = false;
 
   await page.route("**/api/workspace-tabs/test-tab**", async route => {
     const request = route.request(), url = new URL(request.url()), method = request.method();
@@ -49,7 +50,11 @@ test("native custom tab persists the latest edit and keeps Hermes behind exact r
       stopCount += 1; stopFailed = true;
       return route.fulfill({ status: 500, json: { error: "Stop transport unavailable" } });
     }
-    if (!url.searchParams.get("actionId")) return route.fulfill({ json: { run: currentRun } });
+    if (!url.searchParams.get("actionId")) {
+      initialStatusPolls += 1;
+      if (failInitialStatusPoll) { failInitialStatusPoll = false; return route.fulfill({ status: 503, json: { error: "Temporary initial status failure" } }); }
+      return route.fulfill({ json: { run: currentRun } });
+    }
     if (failNextPoll) { failNextPoll = false; return route.fulfill({ status: 503, json: { error: "Temporary run status failure" } }); }
     actionPolls += 1;
     const mayFinish = actionRequests.length === 1 ? actionPolls >= 2 : stopFailed && actionPolls >= 3;
@@ -59,6 +64,10 @@ test("native custom tab persists the latest edit and keeps Hermes behind exact r
 
   await page.goto("/workspace/test-tab");
   await expect(page.getByRole("heading", { name: "Research desk", exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Restoring tab status", { exact: true })).toBeVisible({ timeout: 5000 });
+  expect(initialStatusPolls).toBeGreaterThanOrEqual(2);
+  currentRun = null;
+  await expect(page.getByText("Hermes task in progress", { exact: true })).toHaveCount(0, { timeout: 5000 });
   await expect(page.getByText("/QA/workspace-tabs/test-tab", { exact: true })).toBeVisible();
   await expect(page.getByText(spec.blocks[0].text, { exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Research desk custom tab" }).locator("iframe, script, img")).toHaveCount(0);
@@ -136,4 +145,70 @@ test("native custom tab persists the latest edit and keeps Hermes behind exact r
   await restoredNotes.fill("Saved during navigation");
   await page.goto("/chat");
   await expect.poll(() => savedStates.at(-1)?.notes?.notes).toBe("Saved during navigation");
+});
+
+test("an obsolete run response cannot finish the replacement monitor", async ({ page }) => {
+  await page.addInitScript(() => {
+    const nativeFetch = window.fetch.bind(window);
+    window.__workspaceActionPolls = 0;
+    window.__finishReplacementMonitor = false;
+    window.fetch = async (input, init = {}) => {
+      const raw = typeof input === "string" ? input : input.url;
+      const url = new URL(raw, window.location.origin);
+      if (url.pathname === "/api/voice/runs" && url.searchParams.has("actionId") && (!init.method || init.method === "GET")) {
+        window.__workspaceActionPolls += 1;
+        const id = url.searchParams.get("actionId");
+        if (window.__workspaceActionPolls === 1) {
+          return {
+            ok: true,
+            status: 200,
+            json: () => new Promise(resolve => {
+              window.__resolveObsoleteWorkspacePoll = () => resolve({ run: { id, sessionId: "tab-execution", state: "complete", statusLabel: "Complete", response: "Obsolete completion" } });
+            }),
+          };
+        }
+        const complete = window.__finishReplacementMonitor;
+        return new Response(JSON.stringify({ run: { id, sessionId: "tab-execution", state: complete ? "complete" : "active", statusLabel: complete ? "Complete" : "Replacement still running", response: complete ? "Current completion" : "" } }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return nativeFetch(input, init);
+    };
+  });
+  await mockWorkspace(page);
+
+  await page.route("**/api/workspace-tabs/test-tab**", async route => {
+    const request = route.request(), url = new URL(request.url()), method = request.method();
+    if (url.pathname.endsWith("/artifact")) return route.fulfill({ json: { spec, version: "11111111-1111-1111-1111-111111111111" } });
+    if (url.pathname.endsWith("/state")) {
+      if (method === "GET") return route.fulfill({ json: { value: { fields: {}, notes: {}, checklists: {}, tables: {} } } });
+      return route.fulfill({ json: { saved: true } });
+    }
+    if (method === "POST") {
+      const body = request.postDataJSON();
+      return route.fulfill({ status: 202, json: { run: { id: body.requestId, sessionId: "tab-execution", state: "active", statusLabel: "Starting", response: "" } } });
+    }
+    return route.fulfill({ json: { tab: { id: "test-tab", title: "Research desk", storagePath: "/QA/workspace-tabs/test-tab", executionSessionId: "tab-execution", publishedVersion: "11111111-1111-1111-1111-111111111111" }, messages: [], run: null } });
+  });
+  await page.route("**/api/voice/runs**", async route => {
+    if (route.request().method() === "DELETE") return route.fulfill({ status: 500, json: { error: "Stop transport unavailable" } });
+    return route.fulfill({ json: { run: null } });
+  });
+
+  await page.goto("/workspace/test-tab");
+  await page.getByRole("button", { name: "Review research" }).click();
+  const review = page.getByRole("dialog", { name: "Review before Hermes runs" });
+  await review.getByRole("button", { name: "Run with Hermes" }).click();
+  await page.waitForFunction(() => window.__workspaceActionPolls === 1 && typeof window.__resolveObsoleteWorkspacePoll === "function");
+  await review.getByRole("button", { name: "Stop request" }).click();
+  await page.waitForFunction(() => window.__workspaceActionPolls >= 2);
+  await expect(review.getByText("Replacement still running", { exact: true })).toBeVisible();
+
+  await page.evaluate(() => window.__resolveObsoleteWorkspacePoll());
+  await page.waitForTimeout(100);
+  await expect(review).toBeVisible();
+  await expect(page.getByText("Obsolete completion", { exact: true })).toHaveCount(0);
+
+  await page.evaluate(() => { window.__finishReplacementMonitor = true; });
+  await expect(review).toHaveCount(0, { timeout: 5000 });
+  await page.getByText("Latest result", { exact: true }).click();
+  await expect(page.getByText("Current completion", { exact: true })).toBeVisible();
 });

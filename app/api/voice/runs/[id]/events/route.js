@@ -1,14 +1,16 @@
-import { getAssistantRun, publicAssistantRun } from "@/lib/assistant-runs";
-import { readAssistantText } from "@/lib/assistant-stream";
+import { assistantRunVersion, getAssistantRun, publicAssistantRun } from "@/lib/assistant-runs";
+import { readAssistantTextChunk } from "@/lib/assistant-stream";
 
 export const dynamic = "force-dynamic";
 export async function GET(request, { params }) {
   const { id } = await params;
   const query = new URL(request.url).searchParams;
   const sessionId = query.get("sessionId");
-  if (!sessionId || !getAssistantRun(id, sessionId)) return Response.json({ error: "Request not found." }, { status: 404 });
+  const initial = sessionId ? getAssistantRun(id, sessionId) : null;
+  if (!initial) return Response.json({ error: "Request not found." }, { status: 404 });
   let after = Math.max(0, Number(query.get("after") || request.headers.get("last-event-id")) || 0);
-  let timer, closed = false, signature = "", heartbeat = 0;
+  let timer, closed = false, signature = "", heartbeat = 0, offset = 0;
+  let run = publicAssistantRun(initial), runVersion = assistantRunVersion(id), checkedAt = Date.now();
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     start(controller) {
@@ -16,11 +18,18 @@ export async function GET(request, { params }) {
       function poll() {
         if (closed) return;
         try {
-          for (const event of readAssistantText(id, after)) {
+          const appended = readAssistantTextChunk(id, { after, offset });
+          offset = appended.offset;
+          for (const event of appended.events) {
             controller.enqueue(encoder.encode(`id: ${event.seq}\nevent: text\ndata: ${JSON.stringify(event)}\n\n`));
             after = event.seq;
           }
-          const run = publicAssistantRun(getAssistantRun(id, sessionId));
+          const version = assistantRunVersion(id);
+          if (version !== runVersion || Date.now() - checkedAt >= 1000) {
+            run = publicAssistantRun(getAssistantRun(id, sessionId));
+            runVersion = assistantRunVersion(id);
+            checkedAt = Date.now();
+          }
           const next = JSON.stringify(run);
           if (next !== signature) { controller.enqueue(encoder.encode(`event: run\ndata: ${next}\n\n`)); signature = next; }
           if (!run || ["complete", "error", "cancelled", "interrupted"].includes(run.state)) { stop(); return; }

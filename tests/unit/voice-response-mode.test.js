@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { canAcceptVoiceCapture, conversationModeForPathname, resolveTextOnlyMode, shouldSuppressVoiceOutput } from "../../components/voice/voiceResponseMode.js";
 import { queuedVoiceReducer } from "../../components/voice/voiceEffects.js";
-import { initialWrapper } from "../../components/voice/voiceMachine.js";
-import { createAnswerSpeechBuffer } from "../../components/voice/voiceAnswerStream.js";
+import { canHandleCompletionNow, initialWrapper } from "../../components/voice/voiceMachine.js";
+import { createAnswerReconnectBackoff, createAnswerSpeechBuffer } from "../../components/voice/voiceAnswerStream.js";
 import { voiceChatRequest } from "../../components/voice/voiceTransport.js";
 
 const providerSource = fs.readFileSync(new URL("../../components/voice/VoiceProvider.jsx", import.meta.url), "utf8");
@@ -36,17 +36,19 @@ function response(body, status = 200) {
   };
 }
 
-function routeBindings({ wrapperRef, dispatch, conversationModeRef, generationRef = ref(0), stopCalls = [] }) {
+function routeBindings({ wrapperRef, dispatch, conversationModeRef, generationRef = ref(0), operationEpochRef = ref(0), stopCalls = [] }) {
   return {
     wrapperRef,
     conversationModeRef,
     voiceInputGenerationRef: generationRef,
+    operationEpochRef,
     pttGestureRef: ref({ reset: () => stopCalls.push("gesture") }),
     captureSourceRef: ref("ptt"),
+    completionInputOwnershipRef: ref(false),
     operationAbortRef: ref(new AbortController()),
+    sttAbortRef: ref(null),
     pendingStreamPromiseRef: ref(Promise.resolve()),
     latestBlobRef: ref("pending-blob"),
-    clearVadInterval: () => stopCalls.push("vad"),
     stopUtteranceRecorder: async (discard) => stopCalls.push(discard ? "discard-recorder" : "stop-recorder"),
     stopAllTracks: () => stopCalls.push("tracks"),
     closeAudioContext: async () => stopCalls.push("context"),
@@ -98,6 +100,27 @@ test("Chat route transition preserves an accepted run and any queued transcript 
   assert.ok(afterNavigation.effects.some((effect) => effect.kind === "callChat"), "mode change must retain a queued accepted voice prompt");
   assert.ok(afterNavigation.state.transcript.some((entry) => entry.text === "Accepted before navigation"));
   assert.equal(afterNavigation.effects.some((effect) => effect.kind === "cancelRequests"), false);
+});
+
+test("leaving the live voice surface drops queued microphone work but keeps durable chat work", () => {
+  const pending = {
+    ...initialWrapper,
+    state: { ...initialWrapper.state, state: "starting", permission: "pending", continuousRequested: true },
+    effects: [
+      { effectId: 1, kind: "requestPermission" },
+      { effectId: 2, kind: "syncContinuous", on: true },
+      { effectId: 3, kind: "startRecorder", ptt: true },
+      { effectId: 4, kind: "callSTT" },
+      { effectId: 5, kind: "callChat", text: "Already transcribed" },
+      { effectId: 6, kind: "appendTranscript", entry: { role: "user", text: "Already transcribed" } },
+    ],
+    effectSequence: 6,
+  };
+  const changed = queuedVoiceReducer(pending, { type: "RESPONSE_MODE_CHANGED", mode: "chat" });
+  assert.deepEqual(changed.effects.map(({ kind }) => kind), ["callChat", "appendTranscript"]);
+  assert.equal(changed.state.state, "idle");
+  assert.equal(changed.state.permission, "unknown");
+  assert.equal(changed.state.continuousRequested, false);
 });
 
 test("Chat route settles a completed JSON reply but keeps an accepted detached run pending", () => {
@@ -163,6 +186,7 @@ test("a pending Talk POST survives navigation to Chat and its streamed answer st
     cancelledRunIdsRef,
     streamedRunsRef,
     createAnswerSpeechBuffer,
+    createAnswerReconnectBackoff,
     runtimeFetch,
     sessionIdRef: ref("session-1"),
     readAnswerEvents: async (_response, onEvent) => {
@@ -173,7 +197,10 @@ test("a pending Talk POST survives navigation to Chat and its streamed answer st
     dispatch,
     retireVoiceFeedbackRef: ref(() => {}),
     shouldSuppressVoiceOutput,
+    canHandleCompletionNow,
     conversationModeRef,
+    wrapperRef,
+    completionInputOwnershipRef: ref(false),
   });
   const call = callback("callChat", {
     conversationModeRef,
@@ -182,6 +209,7 @@ test("a pending Talk POST survives navigation to Chat and its streamed answer st
     setAcceptedActionId: (id) => { accepted.current = id; },
     stopVoiceFeedback: () => {},
     operationEpochRef: ref(0),
+    voiceInputGenerationRef: ref(0),
     chatAbortRef: ref(null),
     lastRequestRef: ref(null),
     dispatch,
@@ -224,6 +252,7 @@ test("a pending Talk POST survives navigation to Chat and its streamed answer st
   assert.deepEqual(wrapper.state.streamSpeechQueue, []);
   assert.equal(wrapper.effects.some((effect) => effect.kind === "callTTS"), false);
   assert.equal(requests.some((item) => item.request?.method === "DELETE"), false, "route changes never cancel the server run");
+  answerStreamsRef.current.get(actionId)?.controller.abort();
 });
 
 test("a microphone permission result resolving after Chat entry is stopped", async () => {
@@ -238,6 +267,7 @@ test("a microphone permission result resolving after Chat entry is stopped", asy
   const acquire = callback("acquireMediaStream", {
     runtimeMediaDevices: () => ({ getUserMedia: () => permission.promise }),
     voiceInputGenerationRef: generationRef,
+    microphoneAcquisitionGenerationRef: ref(0),
     conversationModeRef,
     canAcceptVoiceCapture,
     operationEpochRef: ref(0),
@@ -267,6 +297,7 @@ test("the provider applies current mode to each prompt and refuses voice activat
       setAcceptedActionId: () => {},
       stopVoiceFeedback: () => {},
       operationEpochRef: ref(0),
+      voiceInputGenerationRef: ref(0),
       chatAbortRef: ref(null),
       lastRequestRef: ref(null),
       dispatch: () => {},
@@ -292,15 +323,25 @@ test("the provider applies current mode to each prompt and refuses voice activat
     return body.current;
   }
 
-  assert.equal((await submit("talk", false)).audio, true);
-  assert.equal((await submit("chat", false)).audio, false, "a voice result submitted in Chat is text-only");
-  assert.equal((await submit("chat", true)).audio, false, "typed Chat remains text-only");
-  assert.equal((await submit("default", false)).audio, true, "other routes do not force text-only behavior");
+  const talkRequest = await submit("talk", false);
+  assert.equal(talkRequest.audio, true);
+  assert.equal(talkRequest.surface, "talk", "microphone Talk keeps the Talk model route");
+  const typedTalkRequest = await submit("talk", true);
+  assert.equal(typedTalkRequest.audio, false);
+  assert.equal(typedTalkRequest.surface, "talk", "typed Talk keeps the Talk model route even without audio output");
+  const chatRequest = await submit("chat", false);
+  assert.equal(chatRequest.audio, false, "a voice result submitted in Chat is text-only");
+  assert.equal(chatRequest.surface, "chat", "Chat uses the Chat model route independently of input modality");
+  assert.equal((await submit("chat", true)).surface, "chat", "typed Chat keeps the Chat model route");
+  const fallbackRequest = await submit("default", false);
+  assert.equal(fallbackRequest.audio, true, "other routes do not force text-only behavior");
+  assert.equal(fallbackRequest.surface, "chat", "unknown routes fall back to the Chat model route");
 
   const start = callback("startPushToTalk", {
     conversationModeRef: ref("chat"),
     wrapperRef: ref({ state: { state: "idle" } }),
     pttGestureRef: ref({ begin: () => assert.fail("Chat must reject PTT before starting a gesture") }),
+    completionInputOwnershipRef: ref(false),
   });
   assert.equal(start(), false);
   assert.match(providerSource, /const toggleContinuous = useCallback\([\s\S]*?conversationModeRef\.current === "chat"\) return false/);

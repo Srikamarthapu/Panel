@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isLocalApiRequestAllowed } from "../../lib/local-request.js";
+import { hasLoopbackRequestAuthority, isLocalApiRequestAllowed } from "../../lib/local-request.js";
 
 function request({
   url = "http://127.0.0.1:3000/api/voice/chat",
@@ -17,6 +17,12 @@ test("allows same-origin requests served from loopback", () => {
     ),
     true
   );
+});
+
+test("loopback authority is independent of browser fetch metadata", () => {
+  assert.equal(hasLoopbackRequestAuthority(request({ headers: { "sec-fetch-site": "none" } })), true);
+  assert.equal(hasLoopbackRequestAuthority(request({ headers: { "sec-fetch-site": "cross-site" } })), true);
+  assert.equal(hasLoopbackRequestAuthority(request({ host: "attacker.example" })), false);
 });
 
 test("allows the localhost to IPv4 loopback alias used by the desktop redirect", () => {

@@ -43,6 +43,7 @@
 .example span { display: block; margin-bottom: 6px; color: var(--fg-3, #818783); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
 .example q { color: var(--fg-2, #b8bdb9); font-size: 12px; line-height: 1.55; quotes: none; }
 .footer { min-height: 76px; padding: 16px 22px; border-top: 1px solid var(--line, #2d302e); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.footerStart { display: flex; align-items: center; gap: 8px; }
 .primary, .secondary { min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; border-radius: 9px; padding: 0 17px; font: inherit; font-size: 12px; cursor: pointer; }
 .primary { border: 1px solid var(--accent, #c1d7ca); background: var(--accent, #c1d7ca); color: #152019; }
 .secondary { border: 1px solid var(--line-hot, #48504b); background: transparent; color: var(--fg-2, #b8bdb9); }
@@ -50,6 +51,6 @@
 .primary:disabled, .secondary:disabled, .skip:disabled { opacity: .5; cursor: wait; }
 .primary:focus-visible, .secondary:focus-visible, .skip:focus-visible, .error button:focus-visible { outline: 2px solid var(--accent, #c1d7ca); outline-offset: 3px; }
 .saveError { margin: -9px 22px 14px; color: #dfb7ad; font-size: 11px; text-align: right; }
-@media (max-width: 620px) { .backdrop { padding: 0; } .dialog { min-height: 100dvh; border: 0; border-radius: 0; } .body { padding: 30px 22px 24px; } .stepLabel { display: none; } .progress li .dot { height: 3px; } .detailRow { align-items: flex-start; flex-direction: column; gap: 5px; } .detailRow strong { text-align: left; } }
+@media (max-width: 620px) { .backdrop { padding: 0; } .dialog { min-height: 100dvh; border: 0; border-radius: 0; } .body { padding: 30px 22px 24px; } .stepLabel { display: none; } .progress li .dot { height: 3px; } .detailRow { align-items: flex-start; flex-direction: column; gap: 5px; } .detailRow strong { text-align: left; } .footer { padding-inline: 14px; }.footerStart { gap: 6px; }.primary, .secondary { padding-inline: 12px; } }
 @media (max-height: 650px) { .dialog { min-height: 100dvh; border-radius: 0; } .body { min-height: 330px; padding-block: 24px; } .orb { width: 82px; height: 82px; } .orb :global(.mcOrb[data-size=hero]) { width: 82px; height: 82px; } }
 @media (prefers-reduced-motion: reduce) { .backdrop *, .backdrop *::before, .backdrop *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; } }

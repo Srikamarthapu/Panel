@@ -10,22 +10,25 @@ from unittest.mock import patch
 
 
 REPO = Path(__file__).resolve().parents[2]
-HERMES_REPO = Path.home() / ".hermes/hermes-agent"
-os.environ.setdefault("HERMES_REPO", str(HERMES_REPO))
-if HERMES_REPO.is_dir():
+HERMES_REPO = Path(os.environ.get("HERMES_REPO", str(Path.home() / ".hermes/hermes-agent")))
+HERMES_AVAILABLE = (HERMES_REPO / "hermes_cli").is_dir()
+os.environ["HERMES_REPO"] = str(HERMES_REPO)
+if HERMES_AVAILABLE:
     sys.path.insert(0, str(HERMES_REPO))
 sys.path.insert(0, str(REPO / "scripts/voice"))
 
 import panel_profile_identity as identity
 
 adapter_path = REPO / "scripts/voice/panel-acp.py"
-adapter_spec = importlib.util.spec_from_file_location("panel_profile_identity_adapter", adapter_path)
-adapter = importlib.util.module_from_spec(adapter_spec)
-adapter_spec.loader.exec_module(adapter)
+adapter = None
+if HERMES_AVAILABLE:
+    adapter_spec = importlib.util.spec_from_file_location("panel_profile_identity_adapter", adapter_path)
+    adapter = importlib.util.module_from_spec(adapter_spec)
+    adapter_spec.loader.exec_module(adapter)
 
 
 class PanelProfileIdentityTests(unittest.TestCase):
-    @unittest.skipUnless(HERMES_REPO.is_dir(), "installed Hermes runtime is not present")
+    @unittest.skipUnless(HERMES_AVAILABLE, "installed Hermes runtime is not present")
     def test_native_identity_slot_is_overridden_per_agent_and_other_agents_stay_native(self):
         import agent.system_prompt as system_prompt
 
@@ -44,7 +47,7 @@ class PanelProfileIdentityTests(unittest.TestCase):
         self.assertTrue(a_loaded)
         self.assertTrue(b_loaded)
 
-    @unittest.skipUnless(HERMES_REPO.is_dir(), "installed Hermes runtime is not present")
+    @unittest.skipUnless(HERMES_AVAILABLE, "installed Hermes runtime is not present")
     def test_profile_change_invalidates_only_that_native_session_prompt_cache(self):
         class SessionDB:
             def __init__(self):
@@ -81,7 +84,7 @@ class PanelProfileIdentityTests(unittest.TestCase):
         self.assertIsNone(agent._cached_system_prompt)
         self.assertEqual(db.cleared, [("native-profile-session", None), ("native-profile-session", None)])
 
-    @unittest.skipUnless(HERMES_REPO.is_dir(), "installed Hermes runtime is not present")
+    @unittest.skipUnless(HERMES_AVAILABLE, "installed Hermes runtime is not present")
     def test_profile_identity_uses_native_soul_safety_and_context_truncation(self):
         import agent.system_prompt as system_prompt
         import agent.prompt_builder as prompt_builder
@@ -108,7 +111,7 @@ class PanelProfileIdentityTests(unittest.TestCase):
         self.assertTrue(loaded)
         self.assertEqual(calls, [("SOUL.md", True), ("SOUL.md", "/private/SOUL.md")])
 
-    @unittest.skipUnless(HERMES_REPO.is_dir(), "installed Hermes runtime is not present")
+    @unittest.skipUnless(HERMES_AVAILABLE, "installed Hermes runtime is not present")
     def test_normal_prompt_builder_uses_profile_soul_in_stable_and_cached_prefix(self):
         import agent.system_prompt as system_prompt
 
@@ -148,7 +151,7 @@ class PanelProfileIdentityTests(unittest.TestCase):
         self.assertFalse(identity.apply_panel_profile_identity(agent, ""))
         self.assertFalse(identity.apply_panel_profile_identity(agent, "x" * (identity._PROFILE_SOUL_MAX_CHARS + 1)))
 
-    @unittest.skipUnless(HERMES_REPO.is_dir(), "installed Hermes runtime is not present")
+    @unittest.skipUnless(HERMES_AVAILABLE, "installed Hermes runtime is not present")
     def test_cache_clear_failure_fails_closed_and_can_retry(self):
         class BrokenDB:
             def update_system_prompt(self, *_args):
@@ -160,6 +163,7 @@ class PanelProfileIdentityTests(unittest.TestCase):
         self.assertIsNone(agent._panel_profile_soul_digest)
 
 
+@unittest.skipUnless(HERMES_AVAILABLE, "installed Hermes runtime is required for ACP profile identity")
 class ACPProfileIdentityTests(unittest.IsolatedAsyncioTestCase):
     async def test_new_and_loaded_profile_sessions_receive_the_native_primary_soul(self):
         class SessionDB:

@@ -26,7 +26,6 @@
 //   { kind: "stopAllTracks" }
 //   { kind: "closeAudioContext" }
 //   { kind: "stopVisualizer" }
-//   { kind: "clearVadInterval" }
 //   { kind: "callSTT" }
 //   { kind: "callChat", text, textOnly?: boolean }
 //   { kind: "callTTS", text }
@@ -44,6 +43,7 @@
 
 import { normalizeTranscriptEntries, publicReplyText } from "../../lib/publicReply.js";
 import { MAX_USER_TEXT, MAX_ASSISTANT_TEXT, MAX_TRANSCRIPT_ENTRIES, spokenExcerpt } from "../../lib/conversation-limits.js";
+import { normalizeRunOutcome } from "../../lib/run-outcome.js";
 
 export const defaultVoiceConfig = Object.freeze({
   ttsVoice: "en-US-AriaNeural",
@@ -184,8 +184,13 @@ function makeHermesEntry(view, text, opts) {
     time: o.time || "",
   };
   if (o.audioUrl) entry.audioUrl = o.audioUrl;
+  const outcome = normalizeRunOutcome(o.outcome);
+  if (outcome) entry.outcome = outcome;
+  if (o.runId) entry.runId = String(o.runId).slice(0, 160);
   if (o.isError) entry.isError = true;
   if (o.pending) entry.pending = true;
+  if (o.partialResponse) entry.partialResponse = true;
+  if (o.interrupted) entry.interrupted = true;
   return entry;
 }
 
@@ -193,6 +198,45 @@ function appendTranscript(view, entry) {
   if (!entry.text.trim()) return view;
   if (view.transcript.some((existing) => existing.id === entry.id)) return view;
   return { ...view, transcript: view.transcript.concat([entry]).slice(-MAX_TRANSCRIPT_ENTRIES) };
+}
+
+function preferIncomingOutcome(currentValue, incomingValue) {
+  const current = normalizeRunOutcome(currentValue);
+  const incoming = normalizeRunOutcome(incomingValue);
+  if (!current) return Boolean(incoming);
+  if (!incoming) return false;
+  if (current.execution.active !== incoming.execution.active) {
+    return current.execution.active && !incoming.execution.active;
+  }
+  if (!current.execution.active) {
+    const currentFinished = Date.parse(current.finishedAt || "");
+    const incomingFinished = Date.parse(incoming.finishedAt || "");
+    if (Number.isFinite(currentFinished) && Number.isFinite(incomingFinished)) {
+      return incomingFinished >= currentFinished;
+    }
+    if (current.finishedAt && !incoming.finishedAt) return false;
+  }
+  return true;
+}
+
+function appendCompletionResult(view, entry) {
+  if (!entry.runId) return appendTranscript(view, entry);
+  const index = view.transcript.findIndex(existing => existing.role === "hermes" && existing.runId === entry.runId);
+  if (index < 0) return appendTranscript(view, entry);
+  const current = view.transcript[index];
+  const acceptIncoming = preferIncomingOutcome(current.outcome, entry.outcome);
+  const merged = { ...current, ...entry, id: current.id };
+  if (acceptIncoming && entry.outcome) merged.outcome = entry.outcome;
+  else if (current.outcome) {
+    merged.outcome = current.outcome;
+    merged.text = current.text;
+    if (current.isError) merged.isError = true;
+    else delete merged.isError;
+  }
+  if (JSON.stringify(merged) === JSON.stringify(current)) return view;
+  const transcript = view.transcript.slice();
+  transcript[index] = merged;
+  return { ...view, transcript };
 }
 
 /**
@@ -304,12 +348,26 @@ const COMPLETION_HOLD_STATES = new Set([
   "speaking",
 ]);
 
+// A live input turn owns the voice state until it has either been submitted or
+// cancelled. A completion from an earlier durable run may update the transcript
+// later, but it must never replace this state while the recorder or STT handoff
+// still owns the user's utterance.
+const COMPLETION_INPUT_STATES = new Set(["starting", "capturing", "transcribing"]);
+
 /**
  * Public helper: may a completion be spoken right now given the voice state?
  * True only from idle/listening (rest states).
  */
 export function canSpeakCompletionNow(voiceState) {
   return !COMPLETION_HOLD_STATES.has(String(voiceState || ""));
+}
+
+/** Shared shell/reducer admission rule for durable run completions. */
+export function canHandleCompletionNow(view, event = {}, { inputOwned = false } = {}) {
+  if (inputOwned || !view || COMPLETION_INPUT_STATES.has(String(view.state || ""))) return false;
+  if (event.textOnly === true) return true;
+  const finishesCurrent = Boolean(view.requestPending && (!event.actionId || event.actionId === view.actionId));
+  return finishesCurrent || canSpeakCompletionNow(view.state);
 }
 
 // -------------------- self-recovery decisions (T-0010 Law 9) ---------------
@@ -350,6 +408,66 @@ export function canReloadNow(voiceState) {
   return !RELOAD_UNSAFE_STATES.has(String(voiceState || ""));
 }
 
+function reconcileServerTranscript(view, entries) {
+  const serverEntries = normalizeTranscriptEntries(entries);
+  if (!serverEntries.length) return view;
+  const current = Array.isArray(view.transcript) ? view.transcript : [];
+  const next = current.slice();
+  const terminalRunIds = new Set(serverEntries
+    .filter(entry => entry.role === "hermes" && entry.runId)
+    .map(entry => entry.runId));
+  let changed = false;
+
+  const mergeHermesResult = (index, serverEntry) => {
+    const local = next[index];
+    const acceptIncoming = preferIncomingOutcome(local.outcome, serverEntry.outcome);
+    const merged = { ...local };
+    if (acceptIncoming || !local.outcome) merged.text = serverEntry.text;
+    if (serverEntry.time) merged.time = serverEntry.time;
+    if (serverEntry.runId) merged.runId = serverEntry.runId;
+    if (acceptIncoming && serverEntry.outcome) merged.outcome = serverEntry.outcome;
+    if (acceptIncoming || !local.outcome) {
+      if (serverEntry.isError) merged.isError = true;
+      else delete merged.isError;
+    }
+    if (JSON.stringify(merged) === JSON.stringify(local)) return;
+    next[index] = merged;
+    changed = true;
+  };
+
+  for (const serverEntry of serverEntries) {
+    const exact = next.findIndex(entry => entry.id === serverEntry.id);
+    if (exact >= 0) {
+      if (serverEntry.role === "hermes") mergeHermesResult(exact, serverEntry);
+      continue;
+    }
+    const sameRunHermes = serverEntry.runId
+      ? next.findIndex(entry => entry.role === "hermes" && entry.runId === serverEntry.runId)
+      : -1;
+    if (serverEntry.role === "hermes" && sameRunHermes >= 0) {
+      mergeHermesResult(sameRunHermes, serverEntry);
+      continue;
+    }
+    // A server user row appears as soon as a run is accepted. Keep the local
+    // optimistic row during active work, and only reveal an externally-started
+    // user turn once the same snapshot contains its terminal Hermes result.
+    if (serverEntry.role === "user" && serverEntry.runId) {
+      const sameRunUser = next.some(entry => entry.role === "user" && entry.runId === serverEntry.runId);
+      if (sameRunUser) continue;
+      if (!terminalRunIds.has(serverEntry.runId)) continue;
+      // A completion can reach the live transcript before its durable prompt.
+      // Insert the missing user row immediately before that result.
+      const resultIndex = next.findIndex(entry => entry.role === "hermes" && entry.runId === serverEntry.runId);
+      if (resultIndex >= 0) next.splice(resultIndex, 0, serverEntry);
+      else next.push(serverEntry);
+    } else {
+      next.push(serverEntry);
+    }
+    changed = true;
+  }
+  return changed ? { ...view, transcript: next.slice(-MAX_TRANSCRIPT_ENTRIES) } : view;
+}
+
 // -------------------- per-event step --------------------
 
 function step(view, event) {
@@ -358,6 +476,8 @@ function step(view, event) {
       if (view.transcriptHydrated) return [view, []];
       return [{ ...view, transcriptHydrated: true, transcript: normalizeTranscriptEntries([...(Array.isArray(event.entries) ? event.entries : []), ...view.transcript]) }, []];
     }
+    case "RECONCILE_SERVER_TRANSCRIPT":
+      return [reconcileServerTranscript(view, event.entries), []];
     case "CLEAR_ERROR":
       return [{ ...view, lastError: null }, []];
     case "CAPTURE_FAILED": {
@@ -375,7 +495,6 @@ function step(view, event) {
           retryable: event.retryable !== false,
         },
       }), [
-        { kind: "clearVadInterval" },
         { kind: "stopRecorder", discard: true },
         { kind: "stopAllTracks" },
         { kind: "closeAudioContext" },
@@ -388,6 +507,27 @@ function step(view, event) {
     case "MIC_READY":
       if (view.state !== "starting" || view.pttRequested || !view.continuousRequested) return [view, []];
       return [withState(view, "listening"), []];
+    case "MIC_RECOVERY_STARTED":
+      if (!view.continuousRequested) return [view, []];
+      if (!["starting", "listening", "capturing", "error"].includes(view.state)) return [view, []];
+      return [withState(view, "starting", { pttRequested: false, permission: "pending", lastError: null }), []];
+    case "MIC_RECOVERY_READY":
+      if (!view.continuousRequested) return [view, []];
+      return [withState(view, view.state === "starting" ? "listening" : view.state, { permission: "granted", lastError: null }), []];
+    case "MIC_RECOVERY_FAILED": {
+      const message = sanitize(event.error) || "The microphone could not reconnect";
+      return [{
+        ...view,
+        permission: "unknown",
+        permissionError: event.stage === "permission" ? message : view.permissionError,
+        lastError: {
+          stage: event.stage || "microphone",
+          code: event.code || "MIC_RECOVERY_FAILED",
+          message,
+          retryable: event.retryable !== false,
+        },
+      }, [emitActivityEffect(`microphone recovery error: ${message}`)]];
+    }
     case "REQUEST_STARTED":
       return [{ ...view, requestKind: event.kind, requestStartedAt: event.at, lastError: null, activeRequestStatus: "Connecting to Hermes" }, []];
     case "REQUEST_PROGRESS":
@@ -398,7 +538,7 @@ function step(view, event) {
       return [withState(view, "thinking", { lastError: null }), [{ kind: "callChat", text: event.text, textOnly: event.textOnly, preserveContinuous: event.preserveContinuous }]];
     case "CANCEL_CURRENT":
       return [withState(view, "idle", { continuousRequested: false, pttRequested: false, permission: view.permission === "pending" ? "unknown" : view.permission, lastError: null, requestStartedAt: null, requestPending: false, streamSpeechQueue: [], streamSpeechActive: false }), event.teardownHandled ? [] : [
-        ...(event.requestsCancelled ? [] : [{ kind: "cancelRequests" }]), { kind: "stopAudio" }, { kind: "clearVadInterval" },
+        ...(event.requestsCancelled ? [] : [{ kind: "cancelRequests" }]), { kind: "stopAudio" },
         { kind: "stopRecorder", discard: true }, { kind: "stopAllTracks" },
         { kind: "closeAudioContext" },
       ]];
@@ -416,6 +556,17 @@ function step(view, event) {
         event.partial && typeof event.partial === "object" ? event.partial : {};
       return [{ ...view, config: { ...view.config, ...partial } }, []];
     }
+    case "MIC_INPUT_CHANGED": {
+      const partial =
+        event.partial && typeof event.partial === "object" ? event.partial : {};
+      const returnToIdle = ["idle", "starting", "listening", "capturing", "error"].includes(view.state);
+      return [withState({ ...view, config: { ...view.config, ...partial } }, returnToIdle ? "idle" : view.state, {
+        continuousRequested: false,
+        pttRequested: false,
+        permission: "unknown",
+        ...(view.state === "error" ? { lastError: null } : {}),
+      }), []];
+    }
 
     // ---------------- voice catalog hydration ----------------
     case "LOAD_VOICES": {
@@ -424,7 +575,7 @@ function step(view, event) {
     }
     case "RESPONSE_MODE_CHANGED": {
       if (event.mode !== "chat") return [view, []];
-      const voiceOnlyState = ["starting", "listening", "capturing", "speaking"].includes(view.state);
+      const voiceOnlyState = ["starting", "listening", "capturing", "transcribing", "speaking"].includes(view.state);
       const nextState = voiceOnlyState || (view.state === "thinking" && !view.requestPending)
         ? (view.requestPending ? "thinking" : "idle")
         : view.state;
@@ -510,7 +661,6 @@ function step(view, event) {
         { kind: "stopAllTracks" },
         { kind: "closeAudioContext" },
         { kind: "stopVisualizer" },
-        { kind: "clearVadInterval" },
         { kind: "syncContinuous", on: false },
       ];
       return [next, event.teardownHandled ? [] : effects];
@@ -532,7 +682,7 @@ function step(view, event) {
       }), event.teardownHandled ? [] : [
         { kind: "stopRecorder", discard: true },
         ...(view.continuousRequested ? [{ kind: "syncContinuous", on: true }] : [
-          { kind: "clearVadInterval" }, { kind: "stopAllTracks" }, { kind: "closeAudioContext" },
+          { kind: "stopAllTracks" }, { kind: "closeAudioContext" },
         ]),
       ]];
     }
@@ -610,7 +760,6 @@ function step(view, event) {
       // microphone; typed replies never silently restart continuous listening.
       if (event.textOnly && view.continuousRequested && !event.preserveContinuous) {
         effects.push(
-          { kind: "clearVadInterval" },
           { kind: "stopRecorder", discard: true },
           { kind: "stopAllTracks" },
           { kind: "closeAudioContext" },
@@ -633,8 +782,21 @@ function step(view, event) {
     }
 
     // ---------------- chat outcomes ----------------
-    case "CHAT_PENDING":
-      return [withState(view, "thinking", { requestPending: true, actionId: event.actionId, streamSpeechQueue: [], streamSpeechActive: false, streamSpeechFailed: false }), []];
+    case "CHAT_PENDING": { // callChat dispatches this for the exact user row STT_OK just appended.
+      let transcript = view.transcript;
+      if (event.actionId) {
+        for (let index = transcript.length - 1; index >= 0; index -= 1) {
+          const entry = transcript[index];
+          if (entry.role !== "user") continue;
+          if (!entry.runId || entry.runId === view.actionId) {
+            transcript = transcript.slice();
+            transcript[index] = { ...entry, runId: String(event.actionId).slice(0, 160) };
+          }
+          break;
+        }
+      }
+      return [withState({ ...view, transcript }, "thinking", { requestPending: true, actionId: event.actionId, streamSpeechQueue: [], streamSpeechActive: false, streamSpeechFailed: false }), []];
+    }
     case "STREAM_RESET":
       return [{ ...view, requestPending: false, streamSpeechQueue: [], streamSpeechActive: false }, []];
     case "STREAM_TEXT": {
@@ -649,6 +811,7 @@ function step(view, event) {
     }
     case "STREAM_SPEECH_CHUNKS": {
       if (!view.requestPending || view.actionId !== event.actionId || view.streamSpeechFailed || event.textOnly || view.config.autoSpeak === false || view.config.muteOutput) return [view, []];
+      if (!canHandleCompletionNow(view, event)) return [view, []];
       const chunks = (Array.isArray(event.chunks) ? event.chunks : []).map((text) => publicReplyText(text).trim()).filter(Boolean);
       if (!chunks.length) return [view, []];
       const queue = [...(view.streamSpeechQueue || []), ...chunks];
@@ -673,6 +836,7 @@ function step(view, event) {
       const hermesEntry = makeHermesEntry(view, truncated, {
         id: event.id,
         time: event.time,
+        runId: event.actionId,
         audioUrl: event.textOnly ? undefined : event.audioUrl,
         textOnly: event.textOnly,
         pending: event.pending,
@@ -809,13 +973,33 @@ function step(view, event) {
       // answer isn't amputated at the generic 500-char cap.
       const text = publicReplyText(sanitize(event.text, MAX_ASSISTANT_TEXT, true));
       if (!text.trim()) return [view, []];
-      if (event.entryId && view.transcript.some((entry) => entry.id === event.entryId)) return [view, []];
+      // Apply the same admission rule used by the completion poller before any
+      // branch can alter state. This includes errors, silent/text-only results,
+      // and stream-finalization, all of which previously could steal ownership
+      // from a newly-started or already-submitted voice turn.
+      if (!canHandleCompletionNow(view, event)) return [view, []];
       const finishesCurrent = view.requestPending && (!event.actionId || event.actionId === view.actionId);
+      const completionExists = event.entryId && view.transcript.some((entry) => entry.id === event.entryId);
+      const hasPartialResponse = event.streamHandled || Boolean(String(event.partialResponse || "").trim());
+      if (completionExists && !(hasPartialResponse && event.isError && finishesCurrent)) return [view, []];
       // A streamed answer already owns playback. Commit its canonical full
       // text without starting a second reading or cutting the current phrase.
-      if (event.streamHandled && finishesCurrent) {
-        const withoutPreview = { ...view, transcript: view.transcript.filter((entry) => entry.id !== `stream-${event.actionId}`) };
-        const updated = event.isError ? withoutPreview : appendTranscript(withoutPreview, makeHermesEntry(view, text, { id: event.entryId, time: event.time }));
+      if (hasPartialResponse && finishesCurrent) {
+        const previewId = `stream-${event.actionId}`;
+        const preview = view.transcript.find((entry) => entry.id === previewId);
+        let withoutPreview = { ...view, transcript: view.transcript.filter((entry) => entry.id !== previewId) };
+        if (event.isError) {
+          const partialText = publicReplyText(event.partialResponse || preview?.text, { partial: true }).slice(0, MAX_ASSISTANT_TEXT);
+          if (partialText.trim()) {
+            withoutPreview = appendTranscript(withoutPreview, makeHermesEntry(withoutPreview, partialText, {
+              id: `${event.actionId}:partial`,
+              time: preview?.time || event.time,
+              partialResponse: true,
+              interrupted: true,
+            }));
+          }
+        }
+        const updated = completionExists ? withoutPreview : appendCompletionResult(withoutPreview, makeHermesEntry(withoutPreview, text, { id: event.entryId, time: event.time, outcome: event.outcome, runId: event.actionId, isError: event.isError }));
         return [withState(updated, view.streamSpeechActive ? view.state : restState(view.continuousRequested), {
           requestPending: false,
           requestStartedAt: null,
@@ -823,7 +1007,8 @@ function step(view, event) {
         }), []];
       }
       if (event.isError) {
-        return [withState(view, finishesCurrent ? restState(view.continuousRequested) : view.state, {
+        const updated = event.outcome ? appendCompletionResult(view, makeHermesEntry(view, text, { id: event.entryId, time: event.time, outcome: event.outcome, runId: event.actionId, isError: true })) : view;
+        return [withState(updated, finishesCurrent ? restState(view.continuousRequested) : view.state, {
           requestPending: finishesCurrent ? false : view.requestPending,
           lastError: { stage: "chat", code: "RUN_FAILED", message: text, retryable: false },
         }), []];
@@ -835,20 +1020,18 @@ function step(view, event) {
           id: event.entryId,
           time: event.time,
           textOnly: true,
+          outcome: event.outcome,
+          runId: event.actionId,
         });
-        const updated = appendTranscript(view, entry);
+        const updated = appendCompletionResult(view, entry);
         return [finishesCurrent ? withState(updated, "idle", { requestPending: false, requestStartedAt: null, lastError: event.isError ? { stage: "chat", code: "RUN_FAILED", message: text, retryable: false } : null }) : updated, []];
       }
       // Respect autoSpeak / muteOutput: do not synthesize, but the caller
       // treats this as "handled" (marks the id spoken) so it won't loop.
       const cfg = view.config || {};
       if (cfg.autoSpeak === false || cfg.muteOutput === true) {
-        const updated = appendTranscript(view, makeHermesEntry(view, text, { id: event.entryId, time: event.time }));
+        const updated = appendCompletionResult(view, makeHermesEntry(view, text, { id: event.entryId, time: event.time, outcome: event.outcome, runId: event.actionId }));
         return [finishesCurrent ? withState(updated, restState(view.continuousRequested), { requestPending: false }) : updated, []];
-      }
-      // Hold while mid-interaction; the shell will re-dispatch when idle.
-      if (!finishesCurrent && !canSpeakCompletionNow(view.state)) {
-        return [view, []];
       }
       // Conversation history retains the full answer. Reading aloud has its
       // own limit and explicitly points to Chat when the answer is longer.
@@ -856,10 +1039,27 @@ function step(view, event) {
       const hermesEntry = makeHermesEntry(view, text, {
         id: event.entryId,
         time: event.time,
+        outcome: event.outcome,
+        runId: event.actionId,
       });
-      const merged = appendTranscript(view, hermesEntry);
+      const merged = appendCompletionResult(view, hermesEntry);
       const next = withState(merged, "thinking", { requestPending: false });
       return [next, [{ kind: "callTTS", text: spoken }]];
+    }
+
+    case "UPDATE_RUN_OUTCOME": {
+      const outcome = normalizeRunOutcome(event.outcome);
+      const runId = String(event.actionId || "");
+      if (!outcome || !runId) return [view, []];
+      let changed = false;
+      const transcript = view.transcript.map((entry) => {
+        if (entry.runId !== runId || !entry.outcome) return entry;
+        if (!preferIncomingOutcome(entry.outcome, outcome)) return entry;
+        if (JSON.stringify(entry.outcome) === JSON.stringify(outcome)) return entry;
+        changed = true;
+        return { ...entry, outcome };
+      });
+      return [changed ? { ...view, transcript } : view, []];
     }
 
     // ---------------- teardown observability (Property 12) ----------------

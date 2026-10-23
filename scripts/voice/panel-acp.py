@@ -18,11 +18,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from panel_delegation import handle_panel_method, make_acp_notifier, wrap_tool_progress_callback
 from panel_profile_identity import apply_panel_profile_identity
 from panel_profile_tools import panel_agents_available, register_panel_agents_tool
+from panel_agent_policy import install_policy_toolset, install_runtime_enforcement, load_panel_agent_policy, validate_policy_skills
+from panel_tool_results import install_panel_tool_result_classifier
 from acp_adapter import entry, server
 from acp_adapter.session import SessionManager, _expand_acp_enabled_toolsets, _parse_model_config, _register_task_cwd, _translate_acp_cwd
 from hermes_constants import parse_reasoning_effort
 from hermes_cli.config import load_config
 from hermes_cli.tools_config import _get_platform_tools, enabled_mcp_server_names
+
+install_panel_tool_result_classifier()
 
 required = {"model", "requested_provider", "session_id", "cwd"}
 if not required.issubset(inspect.signature(SessionManager._make_agent).parameters):
@@ -115,6 +119,7 @@ class ControlSessionManager(SessionManager):
         # assistant and must retain the user's existing CLI tool selection,
         # including configured computer and service connectors.
         config = load_config()
+        policy = load_panel_agent_policy()
         resolved = _get_platform_tools(config, "cli")
         try:
             from agent.skill_utils import parse_config_string_list
@@ -122,14 +127,20 @@ class ControlSessionManager(SessionManager):
             disabled = set(parse_config_string_list((config.get("agent") or {}).get("disabled_toolsets")) or [])
         except Exception:
             disabled = {"panel_agents"}
-        if "panel_agents" not in disabled and register_panel_agents_tool() and panel_agents_available():
+        if policy is None and "panel_agents" not in disabled and register_panel_agents_tool() and panel_agents_available():
             resolved.add("panel_agents")
         mcp_servers = resolved & enabled_mcp_server_names(config)
-        kwargs["enabled_toolsets"] = _expand_acp_enabled_toolsets(sorted(resolved - mcp_servers), sorted(mcp_servers))
+        if policy is None:
+            kwargs["enabled_toolsets"] = _expand_acp_enabled_toolsets(sorted(resolved - mcp_servers), sorted(mcp_servers))
+        else:
+            validate_policy_skills(policy)
+            kwargs["enabled_toolsets"] = install_policy_toolset(policy)
         planning_only = os.environ.get("PANEL_DISABLE_TOOLS") == "1"
         if planning_only:
             kwargs["enabled_toolsets"] = []
         agent = super()._make_agent(**kwargs)
+        if policy is not None and not planning_only:
+            install_runtime_enforcement(agent, policy)
         if planning_only:
             agent.tools = []
             agent.valid_tool_names = set()
@@ -150,6 +161,12 @@ class ControlSessionManager(SessionManager):
 
 
 class ControlACPAgent(server.HermesACPAgent):
+    def __new__(cls):
+        # Upstream Hermes may use a no-argument factory allocator that returns
+        # GatewayACPAgent. Control supplies its own manager in __init__, so keep
+        # this exact subclass and its prompt/final-result overrides.
+        return object.__new__(cls)
+
     def __init__(self):
         super().__init__(session_manager=ControlSessionManager())
 

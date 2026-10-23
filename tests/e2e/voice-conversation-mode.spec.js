@@ -90,9 +90,9 @@ test("Chat entry stops a pending permission request and returning to Talk stays 
   await page.goto("/");
 
   const dock = page.locator(".voiceDock");
-  await dock.getByRole("group", { name: "Voice mode" }).getByRole("button", { name: "Hands-free", exact: true }).click();
-  await dock.getByRole("button", { name: "Start conversation", exact: true }).click();
-  await expect(dock.locator(".voiceDock__caption--polite")).toHaveText("Waiting for microphone permission");
+  await page.locator(".talkWorkspace__mode").click();
+  await dock.getByRole("button", { name: /Start conversation with/ }).click();
+  await expect(page.locator(".talkWorkspace__caption p")).toHaveText("Hermes is not listening until microphone access is ready.");
   expect(await page.evaluate(() => window.__voiceModeFixture.permissionRequests)).toBe(1);
 
   await page.getByRole("navigation", { name: "Workspace navigation" }).getByRole("link", { name: "Chat", exact: true }).click();
@@ -104,6 +104,69 @@ test("Chat entry stops a pending permission request and returning to Talk stays 
   await page.getByRole("navigation", { name: "Workspace navigation" }).getByRole("link", { name: "Talk", exact: true }).click();
   await expect(page.locator(".voiceDock")).toHaveAttribute("data-state", "idle");
   expect(await page.evaluate(() => window.__voiceModeFixture.permissionRequests)).toBe(1);
+});
+
+test("a mode switch keeps an in-flight immediate reply and suppresses its stale voice output", async ({ page }) => {
+  const fixture = await preparePage(page);
+  let releaseChat;
+  let chatStarted = false;
+  let speechRequests = 0;
+  await page.route("**/api/voice/stt", route => route.fulfill({ json: { text: "Immediate reply test", confidence: 1 } }));
+  await page.route("**/api/voice/tts", route => { speechRequests += 1; return route.fulfill({ status: 200, contentType: "audio/mpeg", body: Buffer.alloc(512) }); });
+  await page.route("**/api/voice/chat", async route => {
+    if (route.request().method() !== "POST") return route.continue();
+    chatStarted = true;
+    await new Promise(resolve => { releaseChat = resolve; });
+    return route.fulfill({ json: { response: "The immediate reply survives the mode change." } });
+  });
+  await page.goto("/");
+  const dock = page.locator(".voiceDock");
+  const hold = dock.locator(".voiceDock__hold");
+  await pointerDown(page, hold);
+  await expect(dock).toHaveAttribute("data-state", "capturing");
+  await page.waitForTimeout(320);
+  await page.mouse.up();
+  await expect.poll(() => chatStarted).toBe(true);
+  await page.keyboard.press("Shift+V");
+  releaseChat();
+  await expect(page.locator(".talkWorkspace__caption p")).toHaveText(/Select the avatar|survives/i);
+  await page.locator(".talkWorkspace__chatLink").click();
+  await expect(page.getByText("The immediate reply survives the mode change.", { exact: true })).toBeVisible();
+  expect(fixture.requests.stoppedRuns).toEqual([]);
+  expect(speechRequests).toBe(0);
+});
+
+test("switching modes during transcription returns idle and the next explicit hold works", async ({ page }) => {
+  await preparePage(page);
+  let releaseFirstStt;
+  let sttCalls = 0;
+  let chatCalls = 0;
+  await page.route("**/api/voice/stt", async route => {
+    sttCalls += 1;
+    if (sttCalls === 1) await new Promise(resolve => { releaseFirstStt = resolve; });
+    return route.fulfill({ json: { text: `Transcript ${sttCalls}`, confidence: 1 } });
+  });
+  await page.route("**/api/voice/chat", route => {
+    if (route.request().method() === "POST") chatCalls += 1;
+    return route.fulfill({ json: { response: "Recovered voice response" } });
+  });
+  await page.goto("/");
+  const dock = page.locator(".voiceDock");
+  const hold = dock.locator(".voiceDock__hold");
+  await pointerDown(page, hold);
+  await page.waitForTimeout(320);
+  await page.mouse.up();
+  await expect(dock).toHaveAttribute("data-state", "transcribing");
+  await page.keyboard.press("Shift+V");
+  await expect(dock).toHaveAttribute("data-state", "idle");
+  releaseFirstStt();
+  await page.waitForTimeout(100);
+  expect(chatCalls).toBe(0);
+  await page.keyboard.press("Shift+V");
+  await pointerDown(page, hold);
+  await page.waitForTimeout(320);
+  await page.mouse.up();
+  await expect.poll(() => chatCalls).toBe(1);
 });
 
 test("an accepted spoken run survives Talk-to-Chat, then each surface selects its response mode", async ({ page }) => {
@@ -124,7 +187,7 @@ test("an accepted spoken run survives Talk-to-Chat, then each surface selects it
     const body = route.request().postDataJSON();
     chatRequests.push(body);
     const record = fixture.records.get(body.sessionId);
-    record.messages.push({ id: `${body.actionId}:user`, role: "user", text: body.text });
+    record.messages.push({ id: `${body.actionId}:user`, runId: body.actionId, role: "user", text: body.text });
 
     const spokenRequestCount = chatRequests.filter((request) => request.audio).length;
     if (body.audio && spokenRequestCount === 1) {
@@ -138,7 +201,7 @@ test("an accepted spoken run survives Talk-to-Chat, then each surface selects it
     const response = body.audio
       ? "The follow-up Talk voice response."
       : body.text.includes("after returning") ? "The next Chat response." : "The typed Chat response.";
-    record.messages.push({ id: `${body.actionId}:answer`, role: "hermes", text: response });
+    record.messages.push({ id: `${body.actionId}:result`, runId: body.actionId, role: "hermes", text: response });
     return route.fulfill({ json: { response, sessionId: body.sessionId } });
   });
   await page.route("**/api/voice/runs**", async (route) => {
@@ -160,8 +223,8 @@ test("an accepted spoken run survives Talk-to-Chat, then each surface selects it
         run = { ...run, state: "complete", response: "The accepted run finished as text in Chat.", updatedAt: new Date().toISOString() };
         record.activeRun = null;
         record.lastRun = run;
-        if (!record.messages.some((message) => message.id === `${run.id}:answer`)) {
-          record.messages.push({ id: `${run.id}:answer`, role: "hermes", text: run.response });
+        if (!record.messages.some((message) => message.id === `${run.id}:result`)) {
+          record.messages.push({ id: `${run.id}:result`, runId: run.id, role: "hermes", text: run.response });
         }
       }
       return route.fulfill({ json: { run } });
@@ -180,11 +243,15 @@ test("an accepted spoken run survives Talk-to-Chat, then each surface selects it
   expect(chatRequests[0].audio).toBe(true);
 
   await expect.poll(() => page.evaluate(() => window.__voiceAudioFixture.instances.some((audio) => !audio.paused && audio.src.startsWith("blob:")))).toBe(true);
-  const pausesBeforeNavigation = await page.evaluate(() => window.__voiceAudioFixture.pauses);
+  const pausesBeforeModeChange = await page.evaluate(() => window.__voiceAudioFixture.pauses);
+  await page.keyboard.press("Shift+V");
+  await expect(dock).toHaveAttribute("data-mode", "conversation");
+  await expect.poll(() => page.evaluate(() => window.__voiceAudioFixture.instances.every((audio) => audio.paused))).toBe(true);
+  expect(await page.evaluate(() => window.__voiceAudioFixture.pauses)).toBeGreaterThan(pausesBeforeModeChange);
+  expect(fixture.requests.stoppedRuns).toEqual([]);
   await page.getByRole("navigation", { name: "Workspace navigation" }).getByRole("link", { name: "Chat", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Message Hermes" })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.__voiceAudioFixture.instances.every((audio) => audio.paused))).toBe(true);
-  expect(await page.evaluate(() => window.__voiceAudioFixture.pauses)).toBeGreaterThan(pausesBeforeNavigation);
   expect(fixture.requests.stoppedRuns).toEqual([]);
 
   const speechRequestsAfterNavigation = speechRequests;
@@ -217,7 +284,9 @@ test("an accepted spoken run survives Talk-to-Chat, then each surface selects it
   await expect.poll(() => page.evaluate(() => window.__voiceAudioFixture.instances.some((audio) => !audio.paused && audio.src.startsWith("blob:")))).toBe(true);
   await page.getByRole("navigation", { name: "Workspace navigation" }).getByRole("link", { name: "Chat", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Message Hermes" })).toBeVisible();
-  await expect(page.getByText("The follow-up Talk voice response.", { exact: true })).toBeVisible();
+  const followUpResponse = page.getByText("The follow-up Talk voice response.", { exact: true });
+  await expect(followUpResponse).toHaveCount(1);
+  await expect(followUpResponse).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.__voiceAudioFixture.instances.every((audio) => audio.paused))).toBe(true);
 
   await page.getByRole("textbox", { name: "Message Hermes" }).fill("A new text turn after returning to Chat");

@@ -142,7 +142,7 @@ test("a fresh build reservation survives the missing-run launch gap and reconcil
 
 test("runtime identity separates planning-only agents from tool-capable agents", () => {
   const common = { sessionId: "same", workingDirectory: fixture, provider: "test", model: "model", reasoningEffort: "low", agentName: "Hermes", agentSoul: "same" };
-  assert.equal(JSON.parse(runtime.assistantRuntimeFingerprint({ ...common, disableTools: true }))[0], 8);
+  assert.equal(JSON.parse(runtime.assistantRuntimeFingerprint({ ...common, disableTools: true }))[0], 18);
   assert.notEqual(runtime.assistantRuntimeFingerprint({ ...common, disableTools: true }), runtime.assistantRuntimeFingerprint({ ...common, disableTools: false }));
   assert.equal(runtime.assistantRuntimeFingerprint({ ...common, disableTools: true }), runtime.assistantRuntimeFingerprint({ ...common, disableTools: true }));
 });
@@ -167,6 +167,14 @@ test("declarative tab extraction rejects executable, unknown, fake-row, duplicat
   assert.throws(() => contract.parseWorkspaceSpec({ ...spec, blocks: [{ id: "run", type: "action", title: "Run", label: "Run", prompt: "Use {{missing}}" }] }), /valid Panel tab/);
   assert.throws(() => contract.parseWorkspaceSpec({ ...spec, blocks: [{ id: "run", type: "action", title: "Run", label: "Run", prompt: "Use {{not valid}}" }] }), /valid Panel tab/);
   assert.throws(() => contract.parseWorkspaceSpec({ ...spec, blocks: [{ id: "run", type: "action", title: "Run", label: "Run", prompt: "Approve: safe\u202Etxt" }] }), /valid Panel tab/);
+  for (const character of ["\u0085", "\u009B", "\u180E"]) {
+    assert.throws(() => contract.parseWorkspaceSpec({ ...spec, title: `Unsafe${character}title` }), /valid Panel tab/);
+  }
+  assert.throws(() => contract.parseWorkspaceSpec({ ...spec, blocks: [{ id: "run", type: "action", title: "Run", label: "Run", prompt: "Approve: tag\u{E0000}txt" }] }), /valid Panel tab/);
+  const escapedTag = JSON.stringify(spec).replace("Review {{goal}}", "Review \\uDB40\\uDC00 {{goal}}");
+  assert.throws(() => contract.extractWorkspaceSpec(`\`\`\`panel-tab\n${escapedTag}\n\`\`\``), /valid Panel tab/);
+  const ordinaryText = "می‌خواهم 👨‍👩‍👧‍👦 ✈️";
+  assert.equal(contract.parseWorkspaceSpec({ ...spec, title: ordinaryText }).title, ordinaryText);
   assert.throws(() => contract.parseWorkspaceSpec({ ...spec, blocks: Array.from({ length: 21 }, (_, index) => ({ id: `b${index}`, type: "text", title: "Text", text: "Value" })) }), /valid Panel tab/);
 
   const tab = tabs.createWorkspaceTab({ id: "state-bounds", title: "State" });
@@ -174,5 +182,23 @@ test("declarative tab extraction rejects executable, unknown, fake-row, duplicat
   assert.deepEqual(tabs.readWorkspaceTabState(tab.id), { items: ["one"] });
   assert.throws(() => tabs.saveWorkspaceTabState(tab.id, { value: "x".repeat(100_000) }), /100 KB/);
   assert.throws(() => tabs.saveWorkspaceTabState(tab.id, { value: "😀".repeat(25_000) }), /100 KB/);
-  await assert.rejects(actions.workspaceTabAction(tab.id, { action: "run", requestId: "bidi-run", text: "Review safe\u202Etxt" }), /hidden direction controls/);
+  for (const [requestId, text] of [
+    ["bidi-run", "Review safe\u202Etxt"],
+    ["c1-run", "Review safe\u0085txt"],
+    ["csi-run", "Review safe\u009Btxt"],
+    ["mvs-run", "Review safe\u180Etxt"],
+    ["zwsp-run", "Review safe\u200Btxt"],
+    ["edge-bom-run", "\uFEFFReview safe text"],
+    ["tag-run", "Review safe\u{E0000}txt"],
+  ]) {
+    await assert.rejects(
+      actions.workspaceTabAction(tab.id, { action: "run", requestId, text }),
+      error => {
+        assert.equal(error.status, 400);
+        assert.match(error.message, /hidden or unsafe characters/);
+        return true;
+      },
+    );
+    assert.equal(runs.getAssistantRun(requestId), null);
+  }
 });

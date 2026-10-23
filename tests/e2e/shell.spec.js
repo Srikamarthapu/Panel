@@ -11,13 +11,13 @@ test.beforeEach(async ({ page }) => { await mockWorkspace(page); await localStat
 test("Talk renders existing avatars and shares the chosen appearance with Chat", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Talk", exact: true })).toBeVisible();
-  const modes = page.getByRole("group", { name: "Voice mode" });
-  await expect(modes.getByRole("button", { name: "Push to talk", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await modes.getByRole("button", { name: "Hands-free", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Start conversation", exact: true })).toBeVisible();
+  const mode = page.locator(".talkWorkspace__mode");
+  await expect(mode).toContainText("Push to talk");
+  await mode.click();
+  await expect(page.getByRole("button", { name: /Start conversation with/ })).toBeVisible();
   await page.getByRole("button", { name: "Bloub", exact: true }).click();
   await expect(page.locator(".talkWorkspace__orb .bloubAvatar")).toBeVisible();
-  await page.getByRole("link", { name: "Chat", exact: true }).click();
+  await page.locator(".talkWorkspace__chatLink").click();
   await expect(page.getByRole("heading", { name: "Where shall we start?" })).toBeVisible();
   await expect(page.locator(".chatWorkspace__presence .bloubAvatar")).toBeVisible();
 });
@@ -29,6 +29,16 @@ test("keyboard navigation can open a destination through search", async ({ page 
   await page.getByRole("textbox", { name: "Find a destination" }).press("Enter");
   await expect(page).toHaveURL(/\/chat$/);
   await expect(page.getByRole("textbox", { name: "Message Hermes" })).toBeVisible();
+});
+
+test("sidebar renders the current workspace and configuration destinations", async ({ page }) => {
+  await page.goto("/");
+  const navigation = page.getByRole("complementary", { name: "Panel sections" });
+  await expect(navigation).toBeVisible();
+  for (const name of ["Talk", "Chat", "Tasks", "Sessions", "Agents", "Memory", "Models", "Tools", "Voice settings", "Settings"]) {
+    await expect(navigation.getByRole("link", { name, exact: true })).toBeVisible();
+  }
+  await expect(navigation.getByRole("button", { name: "Search destinations" })).toBeVisible();
 });
 
 test("typed turn shows pending work, a full answer, and survives reload without TTS", async ({ page }) => {

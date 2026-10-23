@@ -34,9 +34,11 @@ try:
     if not callable(getattr(system_prompt, "_identity_parts", None)) or not callable(_scan_context_content) or not callable(_truncate_content):
         raise RuntimeError("Hermes primary identity hooks are unavailable")
     adapter = runpy.run_path(__PANEL_ADAPTER_PATH__, run_name="panel_acp_readiness")
-    instance = adapter["ControlACPAgent"]()
-    if not getattr(instance, "session_manager", None):
-        raise RuntimeError("Panel ACP agent did not initialize")
+    control_type = adapter["ControlACPAgent"]
+    manager_type = adapter["ControlSessionManager"]
+    instance = control_type()
+    if type(instance) is not control_type or not isinstance(getattr(instance, "session_manager", None), manager_type):
+        raise RuntimeError("Panel ACP agent factory bypassed Control")
     result["acp"] = {"ok": True, "message": "Hermes ACP signatures and per-profile identity hooks are compatible."}
 except ModuleNotFoundError as error:
     name = str(getattr(error, "name", ""))

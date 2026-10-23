@@ -1,35 +1,69 @@
 # Release checks
 
-Panel 0.5.2 is a macOS-first local source release. Hermes is required. The public source export excludes the native wrapper; a notarized native installer and additional agent runtimes are outside this release.
+This checklist applies to the `0.6.0-preview.3` local source release. Hermes Agent is the default full-capability runtime. Direct API mode supports durable Chat and Talk conversations with OpenAI, OpenRouter, or DeepSeek using a server-side key, but it does not provide tools, file or web access, delegation, or workspace planning.
 
-The October 6 review covers per-turn spoken/written instructions, keeping accepted work across Talk/Chat navigation, saved agent profiles, primary SOUL identity, model/workspace selection, native delegated progress, and scoped stop controls. Runtime integration was checked with Hermes `v0.21.5+2142.g085d9ee`. Run the doctor again after updating Hermes: internal contracts can change.
+The supported public distribution is source plus the loopback browser app. The experimental Tauri wrapper is excluded. No signed or notarized native installer is provided.
 
-The October 7 review adds optional first-run setup, a dedicated Agents overview, persistent teammate selection, companion and reading preferences, an explicit local Hermes Models dashboard path, a reviewed custom-tab workflow, and a queue-form session fix. Archiving an agent conversation preserves its profile and history; opening it again creates a fresh linked conversation. Agent runtime is based on recorded execution timestamps, usage is provider-reported, and **Est. cost** uses Hermes pricing for that reported usage. Missing or older telemetry remains unavailable or partial instead of becoming a guessed zero. Custom layouts are validated data rendered by Panel; arbitrary model-generated HTML/scripts are not executed. See [the interface audit](docs/panel-interface-audit.md) and [custom tabs](docs/workspace-tabs.md).
+## Publication record
 
-The 0.5.2 interface refinement gives Bloub moderate, centered listening and push-to-talk expressions while preserving animated transitions, idle pointer tracking, and reduced-motion behavior. Secondary companions are larger, remain around the centered main companion without an internal scroll region, and reflow through two columns and then one column when the docked pane or viewport narrows. Saved glow and float preferences still apply, and effective reduced motion disables floating. Focused Bloub geometry tests passed in Chromium and WebKit through the real VoiceProvider states, and 12 focused unit checks cover gaze, morph continuity, renderer reuse, and pointer tracking. The browser fixture uses a silent synthetic media stream; it verifies state and rendered geometry, not physical microphone capture, audible output, or subjective comfort across users and displays.
+For a published tag, use its GitHub release and associated CI run as the acceptance record for the exact exported source. Installed-app testflights and earlier local builds can inform a release, but they do not replace clean-export verification. Keep exact counts and live-provider observations in the GitHub release record rather than copying results from a different candidate into this durable checklist.
 
-## Reproducible checks
+## Clean-checkout gate
 
-Run `npm test`, `npm run test:e2e`, `npm run test:smoke`, `npm run build`, and `node scripts/release/check.mjs .`. Browser checks need `npx playwright install chromium`; the profile/session/voice-mode tests were additionally exercised with WebKit. CI uses an empty local configuration and deterministic API/provider fixtures. Python ACP/identity/delegation tests in `tests/unit/panel-*.test.py` require a compatible installed Hermes runtime and are separate from the portable Node suite.
+Use Node.js 22 or newer on macOS. Run release checks from a clean exported checkout with no `.env` file, existing Panel data, or Hermes installation in the test roots:
 
-`npm run doctor` checks local dependencies and the installed adapter contract without model requests. Source export uses an explicit allowlist and must be scanned before publication. Never distribute `.env` files, runtime data, user agent profiles, recordings, a personal app bundle, or private Git history.
+```sh
+npm ci
+npm run release:manifest:verify
+node scripts/release/check.mjs .
+npm test
+npm run test:browser-server
+npx playwright install chromium
+npm run test:e2e
+npm run test:smoke
+npm run build
+npm audit --omit=dev
+```
 
-In **Settings**, verify that System follows the operating-system motion preference, Reduced pauses Bloub and companion movement, and Full explicitly restores it; companion glow and float, pointer following, text size, and conversation spacing persist locally. In **Models**, verify the local Hermes dashboard URL before opening it; if the dashboard is unavailable, use `hermes model`. Talk and Chat may inherit the main model instead of duplicating its identifier.
+`npm test` includes Node unit and property suites plus portable Python adapter checks. Tests that import a live installed Hermes runtime are explicitly skipped and are not passes. `npm run test:py:host` intentionally exits before starting Hermes until a fully sandboxed host fixture exists.
 
-Current private 0.5.2 source evidence: `npm test` passed 411 unit tests plus 118 property tests; the full Chromium and smoke set passed 90/90 with two workers, and the selected WebKit set passed 10/10 serially. An earlier high-concurrency browser run overlapped the production build and WebKit, producing total-test timeouts; the unchanged tests passed on the unchanged source when rerun at lower concurrency without a parallel build. No test was weakened. The production build completed in `.next-panel-052-final-20261007` with six pre-existing dynamic-filesystem tracing warnings and no runtime-file changes. The focused Bloub browser checks use a silent synthetic stream and mocked recognition/chat services; they are separate from physical audio validation. The three desktop-only unit checks are absent from the public source export, so this paragraph does not claim a public-checkout unit count.
+Playwright creates an isolated production build and owned loopback server by default. Use `PANEL_TEST_URL` only when intentionally testing an external server. `npm run test:browser-server` is the smaller fake-executable lifecycle check; it does not replace the production-build browser suites.
 
-The 16.3.6 Next.js dependency audit reported one high advisory and five additional advisories. Updating to 16.3.8 reduced the audit to zero. [GHSA-cjq9-62q9-8jv4](https://github.com/advisories/GHSA-cjq9-62q9-8jv4) concerns `remotePatterns`; Panel does not configure that feature, so the prior audit result is not evidence that Panel exposed the vulnerable configuration.
+CI runs the release source check, approved-manifest verification, dependency install, portable tests, the fake-executable browser-server lifecycle check, Chromium browser suites, and the production build on `macos-latest`. Manifest verification rejects source drift from the reviewed export; the browser-server check covers interrupted builds and owned process-group cleanup without replacing the production browser suites. A green workflow verifies that checkout and environment; it does not verify a user's provider credentials, live Hermes installation, microphone, speakers, or model quality.
 
-## Live evidence and limits
+## Source-export gate
 
-An isolated October 7 production-build probe created a saved agent, completed a real-provider task, archived its conversation through the Sessions API, then completed another task. Both runs succeeded (approximately 8.2 and 4.6 seconds), the profile retained its identity, the old conversation retained both messages, and runtime/token/estimated-cost totals accumulated across the replacement conversation. These are Hermes turn estimates, excluding auxiliary calls and retries, not invoice reconciliation. On the installed Mac, **Models → Manage providers → Open Hermes dashboard** opened the requested local Models URL in the system browser. The two profiles affected by the prior archive bug were restored without restoring their archived conversations.
+Never publish the development checkout or its Git history directly. The reviewed manifest is the boundary for the public source export:
 
-An isolated real-provider probe on October 6 used DeepSeek Flash for spoken, written, and agent-list turns in the same native conversation. It returned a two-sentence plain spoken answer, a structured written answer, and a native `panel_agents` tool call. A separate saved-agent task was started through the actual Python tool and returned a completed result; status from the wrong parent conversation was rejected. The profile's SOUL, working directory, and selected model matched the native runtime.
+```sh
+npm run release:manifest:prepare -- /tmp/panel-source-candidate.json
+npm run release:manifest:review -- /tmp/panel-source-candidate.json
+npm run release:manifest:approve -- /tmp/panel-source-candidate.json
+npm run release:manifest:verify
+npm run release:export -- /new/empty/export/path
+node scripts/release/check.mjs /new/empty/export/path
+```
 
-Those four test turns took approximately 7.1, 2.6, 3.8, and 4.3 seconds respectively. They are individual observations, not latency guarantees. The first two startup-only attempts in a fresh test Hermes home triggered native first-run packaging; the embedded launcher now disables lazy installs and resolves the installed managed interpreter while retaining dependency activation. Actual model/provider availability still depends on each user's configuration.
+Review the candidate before approval. The exporter refuses changed hashes, newly eligible files, symlinks, and missing local Python dependencies. Scan the exported directory again before publication. Do not include environment files, provider credentials, Panel or Hermes data, transcripts, recordings, agent profiles, launch agents, built applications, or private Git history.
 
-On October 7, a separate isolated live-provider run exercised the complete no-tools custom-tab planner path: two natural requirement turns, **Prepare plan**, and the approved build completed in approximately 10.5, 8.5, 4.1, and 3.5 seconds. The result contained four valid Panel-native blocks and produced zero tool calls and zero tool events. The compatibility fallback for a provider that ignores the requested `panel-plan` fence is restricted to authoritative prepare-plan review runs; normal conversation still requires `panel-plan`. This verifies one planner/build path, not arbitrary generated applications or a provider-backed custom-tab action.
+## Manual acceptance
 
-The installed legacy app was observed still showing the old octopus identity before replacement. Integration replaced `/Applications/Hermes Control.app` with the fresh `/Applications/Panel.app`, retained the old bundle as a backup, verified the new bundle's ad hoc signature, restarted the private LaunchAgent with the 16.3.8 build, matched its API build identity, and observed the Panel shell open the localhost workspace. Six configuration fingerprints and 99 history fingerprints remained unchanged. This is evidence for the tested Mac only; the bundle is not notarized, is excluded from the public source export, and was not clean-installed on a second Mac.
+On the exported checkout:
 
-Physical microphone/speaker latency and a prolonged hands-free conversation were not verified by these probes. Real Jev routing, a provider-backed reviewed custom-tab action, Discord delivery, public notarization, and a clean installation on a second Mac were not tested. These limits prevent a claim that every provider, voice setup, or installation works without errors. Transcript persistence, interruption handling, and browser microphone lifecycle tests are separate from audible end-to-end validation.
+1. Start Panel with no provider configuration and confirm the welcome guide explains Hermes and Direct API choices without exposing host paths.
+2. Configure one execution mode. Run `npm run doctor`; it must not contact a model provider or print credentials.
+3. Send one small Chat message when willing to consume provider usage. Confirm streaming reaches a terminal state and **Review work** distinguishes summaries, tool receipts, file claims, and execution evidence.
+4. In Hermes mode, exercise any release-critical tool or saved-agent flow with the intended approval settings. Direct mode must continue to describe itself as tool-free.
+5. Check keyboard navigation, focus, form validation, horizontal overflow, console errors, and reduced motion at representative desktop and narrow widths.
+6. Confirm the listener is loopback-only and foreign hosts/origins are rejected.
+7. Verify a stop request leaves completed side effects intact and presents interrupted or unfinished work honestly.
+
+Record exact commands, counts, environment, skipped checks, and any live-provider calls in the release notes. Do not reuse historical counts as evidence for a changed candidate.
+
+## Preview limitations
+
+This preview does not establish compatibility with every Hermes revision, provider, plugin, model, or voice setup. Automated browser tests use synthetic or mocked media and do not prove physical microphone-to-speaker quality. A successful provider call does not prove billing behavior, long-session reliability, or model availability for another account.
+
+Restricted saved teammates cannot delegate because their policy is not yet carried into native children. Direct API mode remains tool-free. Custom workspace layouts are validated Panel-native data; arbitrary generated HTML or scripts are not executed. Model-generated sites, designs, code, and other deliverables still require human review for correctness, accessibility, security, licensing, and professional quality.
+
+Panel is a local single-user application. Do not expose it through a public tunnel, reverse proxy, or shared host. See [SECURITY.md](SECURITY.md) and the [0.6.0-preview.3 release notes](docs/release-0.6.0-preview.3.md).

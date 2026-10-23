@@ -90,10 +90,9 @@ for (const motion of ["reduce", "no-preference"]) test(`Bloub keeps friendly cen
   await page.emulateMedia({ reducedMotion: motion });
   await prepareTalk(page);
   const dock = page.locator(".voiceDock");
-  const modes = dock.getByRole("group", { name: "Voice mode" });
 
-  await modes.getByRole("button", { name: "Hands-free", exact: true }).click();
-  await dock.getByRole("button", { name: "Start conversation", exact: true }).click();
+  await page.locator(".talkWorkspace__mode").click();
+  await dock.getByRole("button", { name: /Start conversation with/ }).click();
   await expect(dock).toHaveAttribute("data-state", "listening", { timeout: 15000 });
   const listeningAvatar = page.locator('.talkWorkspace__orb .mcOrb--bloub[data-state="listening"] .bloubAvatar');
   await expect(listeningAvatar).toBeVisible();
@@ -102,9 +101,9 @@ for (const motion of ["reduce", "no-preference"]) test(`Bloub keeps friendly cen
   }).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("friendly-listening.png") });
 
-  await dock.getByRole("button", { name: "End conversation", exact: true }).click();
+  await dock.getByRole("button", { name: /End conversation with/ }).click();
   await expect(dock).toHaveAttribute("data-state", "idle");
-  await modes.getByRole("button", { name: "Push to talk", exact: true }).click();
+  await page.keyboard.press("Shift+V");
   const hold = dock.locator(".voiceDock__hold");
   const box = await hold.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);

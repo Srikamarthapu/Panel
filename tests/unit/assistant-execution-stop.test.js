@@ -11,6 +11,7 @@ process.env.HERMES_HOME = path.join(temporary, "empty-hermes-home");
 const sessions = await import("../../lib/work-sessions.js");
 const runs = await import("../../lib/assistant-runs.js");
 const queue = await import("../../lib/work-queue.js");
+const storeHelpers = await import("../../lib/work-store.js");
 const runner = path.resolve("scripts/voice/run-hermes-action.mjs");
 test.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
 
@@ -143,4 +144,46 @@ test("confirmed execution cleanup never signals a later process that reuses a sa
   assert.equal(read.executionActive, false, "confirmed cleanup is a durable boundary, not a new ownership claim");
   assert.equal(read.executionCancelledAt, finishedAt);
   assert.equal(alive(child.pid), true, "reading completed history must never signal unrelated work");
+});
+
+test("an unverified live PID is never treated as owned or signalled", { timeout: 5000 }, async t => {
+  fs.rmSync(process.env.PANEL_DATA_DIR, { recursive: true, force: true });
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });
+  const done = new Promise(resolve => child.once("exit", resolve));
+  await new Promise((resolve, reject) => { child.once("spawn", resolve); child.once("error", reject); });
+  t.after(async () => { kill(child.pid); await done; });
+  const session = sessions.createWorkSession({ name: "Reused PID session" });
+  const run = runs.createAssistantRun({ id: "reused-live-pid", sessionId: session.id, text: "Old request" });
+  runs.updateAssistantRun(run.id, {
+    state: "active", pid: child.pid, pidIdentity: "wrong-boot-and-start",
+    hermesProcessGroupPid: child.pid, hermesProcessGroupIdentity: "wrong-boot-and-start", executionActive: true,
+  });
+  const reconciled = runs.getAssistantRun(run.id);
+  assert.equal(reconciled.state, "interrupted");
+  assert.equal(runs.assistantRunIsExecuting(reconciled), false);
+  runs.cancelAssistantRun(run.id, session.id);
+  assert.equal(alive(child.pid), true, "numeric PID reuse cannot authorize a process-group signal");
+});
+
+test("an expired run stops its verified execution and rejects a late result", { timeout: 10000 }, async t => {
+  fs.rmSync(process.env.PANEL_DATA_DIR, { recursive: true, force: true });
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });
+  const done = new Promise(resolve => child.once("exit", resolve));
+  await new Promise((resolve, reject) => { child.once("spawn", resolve); child.once("error", reject); });
+  t.after(async () => { kill(child.pid); await done; });
+  const identity = storeHelpers.processIdentity(child.pid);
+  const session = sessions.createWorkSession({ name: "Expired execution" });
+  const run = runs.createAssistantRun({ id: "expired-live-run", sessionId: session.id, text: "Old request" });
+  runs.updateAssistantRun(run.id, {
+    state: "active", createdAt: new Date(Date.now() - 16 * 60_000).toISOString(),
+    pid: child.pid, pidIdentity: identity, executionActive: true,
+  });
+  const expired = runs.getAssistantRun(run.id);
+  assert.equal(expired.state, "error");
+  assert.ok(expired.executionStopRequestedAt);
+  assert.match(expired.error, /expired.*stopped/i);
+  await until(() => !alive(child.pid), "expired execution stop");
+  const late = runs.finalizeAssistantRun(run.id, { state: "complete", response: "Too late", error: "" });
+  assert.equal(late.state, "error");
+  assert.notEqual(late.response, "Too late");
 });

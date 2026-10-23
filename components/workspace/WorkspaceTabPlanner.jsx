@@ -3,12 +3,15 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowUp, X, Square, ArrowUpRight, Archive, RotateCcw } from "lucide-react";
 import WorkspaceTabView from "./WorkspaceTabView.jsx";
+import { startAdaptivePolling } from "@/lib/adaptive-poll.js";
 import styles from "./WorkspaceTabPlanner.module.css";
 
 async function request(url, options = {}) {
   const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(15000), ...options, headers: { "Content-Type": "application/json", ...options.headers } });
-  const value = await response.json();
-  if (!response.ok) throw new Error(value.error || "Panel could not save this change.");
+  let value;
+  try { value = await response.json(); }
+  catch { throw new Error(response.ok ? "Panel returned an unreadable response. Try again." : "Panel could not complete this request."); }
+  if (!response.ok) throw new Error(value.error || "Panel could not complete this request.");
   return value;
 }
 const busyRun = run => run && (["queued", "active"].includes(run.state) || run.executionActive);
@@ -16,7 +19,7 @@ export default function WorkspaceTabPlanner({ initialId, savedTabs = [], onClose
   const router = useRouter(), dialog = useRef(null), input = useRef(null), transcript = useRef(null);
   const sending = useRef(false), requestId = useRef(null), createId = useRef(null), mounted = useRef(true);
   const [id, setId] = useState(initialId || null), [details, setDetails] = useState(null);
-  const [draft, setDraft] = useState(""), [pending, setPending] = useState(false), [error, setError] = useState("");
+  const [draft, setDraft] = useState(""), [pending, setPending] = useState(false), [error, setError] = useState(""), [pollError, setPollError] = useState("");
   const [optimistic, setOptimistic] = useState(null), [showPreview, setShowPreview] = useState(false);
   const [archiveConfirm, setArchiveConfirm] = useState(false);
   const tab = details?.tab, run = details?.run, busy = pending || busyRun(run) || tab?.phase === "building";
@@ -29,17 +32,19 @@ export default function WorkspaceTabPlanner({ initialId, savedTabs = [], onClose
   }, []);
   useEffect(() => {
     if (!id) return;
-    let cancelled = false, timer;
-    async function poll() {
-      try {
+    let cancelled = false;
+    const polling = startAdaptivePolling({
+      baseDelay: 1500,
+      maxDelay: 24000,
+      poll: async () => {
         const result = await request(`/api/workspace-tabs/${id}`);
         if (cancelled) return;
-        setDetails(result);
+        setDetails(result); setPollError("");
         setOptimistic(previous => result.messages.some(item => item.role === "user" && item.runId === previous?.requestId) ? null : previous);
-      } catch (failure) { if (!cancelled) setError(failure.message); }
-      if (!cancelled) timer = setTimeout(poll, 1500);
-    }
-    poll(); return () => { cancelled = true; clearTimeout(timer); };
+      },
+      onError: failure => { if (!cancelled) setPollError(failure.message); },
+    });
+    return () => { cancelled = true; polling.stop(); };
   }, [id]);
   useEffect(() => {
     if (!transcript.current) return;
@@ -95,7 +100,7 @@ export default function WorkspaceTabPlanner({ initialId, savedTabs = [], onClose
     catch (failure) { setError(failure.message); }
     finally { sending.current = false; setPending(false); }
   }
-  function openSaved(nextId) { setId(nextId); setDetails(null); setError(""); setOptimistic(null); requestId.current = null; setDraft(""); setShowPreview(false); setArchiveConfirm(false); }
+  function openSaved(nextId) { setId(nextId); setDetails(null); setError(""); setPollError(""); setOptimistic(null); requestId.current = null; setDraft(""); setShowPreview(false); setArchiveConfirm(false); }
   const displayedMessages = details?.messages || [];
   const liveReply = busyRun(run) && tab?.phase !== "building" ? run.response : "";
   return <dialog ref={dialog} className={styles.dialog} aria-labelledby="tab-planner-title" onCancel={event => { event.preventDefault(); onClose(); }}>
@@ -119,6 +124,7 @@ export default function WorkspaceTabPlanner({ initialId, savedTabs = [], onClose
       </>}
     </>}
     {error && <div className={styles.error} role="alert">{error}<button onClick={() => { if (id) refresh().then(() => setError("")).catch(failure => setError(failure.message)); }}>Retry loading</button></div>}
+    {pollError && <div className={styles.error} role="alert">{pollError}<button onClick={() => { if (id) refresh().then(() => setPollError("")).catch(failure => setPollError(failure.message)); }}>Retry status</button></div>}
     {tab && <footer className={styles.footer}><details><summary>Files on this Mac</summary><code>{tab.storagePath}</code></details>{!tab.archivedAt && (archiveConfirm ? <span>Keep files and archive?<button disabled={busy} onClick={() => archive(true)}>Archive</button><button onClick={() => setArchiveConfirm(false)}>Cancel</button></span> : <button disabled={busy} onClick={() => setArchiveConfirm(true)}><Archive size={13} />Archive tab</button>)}</footer>}
     {!id && savedTabs.length > 0 && <details className={styles.saved}><summary>Continue a saved tab ({savedTabs.length})</summary>{savedTabs.map(saved => <button key={saved.id} onClick={() => openSaved(saved.id)}>{saved.title}<span>{saved.archivedAt ? "Archived" : saved.published ? "Added" : "Draft"}</span></button>)}</details>}
   </dialog>;

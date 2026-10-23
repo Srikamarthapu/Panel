@@ -1,13 +1,14 @@
 /** Build the actual request used by VoiceProvider. Both the body and Accept
  * header select transport: the server also treats audio Accept as opt-in. */
-export function voiceChatRequest({ text, sessionId, sttMs = 0, textOnly = false, history, signal, actionId }) {
+export function voiceChatRequest({ text, sessionId, surface = "chat", sttMs = 0, textOnly = false, history, signal, actionId }) {
+  const requestSurface = surface === "talk" ? "talk" : "chat";
   return {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Accept: textOnly ? "application/json" : "audio/mpeg, application/json",
     },
-    body: JSON.stringify({ text, sessionId, audio: !textOnly, stt_ms: sttMs, ...(history?.length ? { history } : {}), ...(actionId ? { actionId } : {}) }),
+    body: JSON.stringify({ text, sessionId, surface: requestSurface, audio: !textOnly, stt_ms: sttMs, ...(history?.length ? { history } : {}), ...(actionId ? { actionId } : {}) }),
     ...(signal ? { signal } : {}),
   };
 }

@@ -71,7 +71,7 @@ export function prepareVoiceFeedbackAudio({ phrase, signature, cache, fetcher = 
     if (blob?.size >= minBytes) { cache?.set(cacheKey, blob); return { blob }; }
     const response = await fetcher("/api/voice/tts", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: phrase, modelId: VOICE_FEEDBACK_MODEL }), signal: controller.signal,
+      body: JSON.stringify({ text: phrase, modelId: VOICE_FEEDBACK_MODEL, latencyOptimized: true }), signal: controller.signal,
     });
     if (controller.signal.aborted || !response.ok) {
       try { await response.body?.cancel(); } catch { /* noop */ }

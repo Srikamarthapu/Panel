@@ -34,12 +34,32 @@ test("startup failure gives a focused retry that actually reloads saved sessions
   await expect(page.locator("[data-startup-state=error]").getByRole("alert")).toHaveText("Saved sessions are temporarily unavailable.");
   const retry = page.getByRole("button", { name: "Try again", exact: true });
   await expect(retry).toBeFocused();
+  await expect(page.getByRole("button", { name: "Continue without importing" })).toHaveCount(0);
   await page.screenshot({ path: "/tmp/panel-startup-error.png" });
   failed = false;
   await retry.press("Enter");
   await expect(page.getByRole("textbox", { name: "Message Hermes" })).toBeVisible();
   expect(reads).toBeGreaterThanOrEqual(2);
   await expect(page.locator("[data-startup-state]")).toHaveCount(0);
+});
+
+test("legacy import failure can be skipped for this launch without deleting browser history", async ({ page }) => {
+  const fixture = await mockWorkspace(page, { sessions: [] });
+  await page.addInitScript(() => {
+    localStorage.setItem("hermes.voice.sessionId", "legacy-import-failure");
+    localStorage.setItem("hermes.voice.transcript", JSON.stringify([{ role: "hermes", text: "Keep this browser copy." }]));
+  });
+  let attempts = 0;
+  await page.route("**/api/sessions/adopt", route => { attempts += 1; return route.fulfill({ status: 503, json: { error: "Previous conversation could not be imported." } }); });
+  await page.goto("/chat");
+  await expect(page.locator("[data-startup-state=error]").getByRole("alert")).toHaveText("Previous conversation could not be imported.");
+  const continueButton = page.getByRole("button", { name: "Continue without importing", exact: true });
+  await expect(continueButton).toBeVisible();
+  await continueButton.click();
+  await expect(page.getByRole("textbox", { name: "Message Hermes" })).toBeVisible();
+  expect(attempts).toBe(1);
+  expect(fixture.requests.createdSessions).toEqual([{ name: "New session" }]);
+  expect(await page.evaluate(() => localStorage.getItem("hermes.voice.transcript"))).toContain("Keep this browser copy.");
 });
 
 const desktop = path.resolve("hermes-control/src");

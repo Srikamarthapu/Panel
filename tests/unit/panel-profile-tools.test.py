@@ -11,17 +11,20 @@ from unittest.mock import patch
 
 
 REPO = Path(__file__).resolve().parents[2]
-HERMES_REPO = Path.home() / ".hermes/hermes-agent"
-os.environ.setdefault("HERMES_REPO", str(HERMES_REPO))
-if HERMES_REPO.is_dir():
+HERMES_REPO = Path(os.environ.get("HERMES_REPO", str(Path.home() / ".hermes/hermes-agent")))
+HERMES_AVAILABLE = (HERMES_REPO / "hermes_cli").is_dir()
+os.environ["HERMES_REPO"] = str(HERMES_REPO)
+if HERMES_AVAILABLE:
     sys.path.insert(0, str(HERMES_REPO))
 sys.path.insert(0, str(REPO / "scripts/voice"))
 import panel_profile_tools as tool
 
 adapter_path = REPO / "scripts/voice/panel-acp.py"
-adapter_spec = importlib.util.spec_from_file_location("panel_profile_tool_adapter", adapter_path)
-adapter = importlib.util.module_from_spec(adapter_spec)
-adapter_spec.loader.exec_module(adapter)
+adapter = None
+if HERMES_AVAILABLE:
+    adapter_spec = importlib.util.spec_from_file_location("panel_profile_tool_adapter", adapter_path)
+    adapter = importlib.util.module_from_spec(adapter_spec)
+    adapter_spec.loader.exec_module(adapter)
 
 
 class PanelProfileToolTests(unittest.TestCase):
@@ -81,14 +84,78 @@ class PanelProfileToolTests(unittest.TestCase):
             "agents": [{
                 "id": "researcher_1", "name": "Researcher", "provider": "openai",
                 "model": "model-x", "role": "Find and compare evidence.", "working": True,
+                "working_directory": "/secret",
+                "capabilities": {"mode": "unrestricted"},
             }],
         })
         args, kwargs = run.call_args
         self.assertEqual(args[0], [str(self.node), str((self.app / tool.CLI_RELATIVE_PATH).resolve())])
         self.assertFalse(kwargs["shell"])
-        self.assertEqual(kwargs["timeout"], 15)
+        self.assertEqual(kwargs["timeout"], 20)
         self.assertEqual(kwargs["env"]["PANEL_WORK_SESSION_ID"], "caller-session")
         self.assertEqual(kwargs["env"]["PANEL_DATA_DIR"], str(self.data))
+
+    def test_list_distinguishes_explicit_empty_and_selected_capabilities(self):
+        payload = {
+            "ok": True,
+            "agents": [
+                {
+                    "id": "empty", "name": "Empty", "capabilityPolicy": {
+                        "version": 1,
+                        "tools": {"mode": "allow", "ids": []},
+                        "skills": {"mode": "allow", "ids": []},
+                    },
+                },
+                {
+                    "id": "reader", "name": "Reader", "capabilityPolicy": {
+                        "version": 1,
+                        "tools": {"mode": "allow", "ids": ["web_extract", "read_file"]},
+                        "skills": {"mode": "allow", "ids": ["research"]},
+                    },
+                },
+            ],
+        }
+        result, _ = self.invoke({"action": "list"}, payload)
+        self.assertEqual(result["agents"][0]["capabilities"], {"mode": "explicit", "tools": [], "skills": []})
+        self.assertEqual(result["agents"][1]["capabilities"], {
+            "mode": "explicit", "tools": ["read_file", "web_extract"], "skills": ["research"],
+        })
+
+    def test_list_fails_closed_on_malformed_capability_policy(self):
+        result, _ = self.invoke({"action": "list"}, {
+            "ok": True,
+            "agents": [{
+                "id": "broken", "name": "Broken", "capabilityPolicy": {
+                    "version": 1,
+                    "tools": {"mode": "allow", "ids": ["bad/id"]},
+                    "skills": {"mode": "allow", "ids": []},
+                },
+            }],
+        })
+        self.assertEqual(result["agents"][0]["capabilities"], {"mode": "unavailable"})
+
+        normalized, _ = self.invoke({"action": "list"}, {
+            "ok": True,
+            "agents": [{
+                "id": "stored-broken", "name": "Stored broken",
+                "capabilityPolicy": {
+                    "version": 1,
+                    "tools": {"mode": "allow", "ids": []},
+                    "skills": {"mode": "allow", "ids": []},
+                },
+                "capabilityPolicyUnavailable": True,
+            }],
+        })
+        self.assertEqual(normalized["agents"][0]["capabilities"], {"mode": "unavailable"})
+
+        missing_policy, _ = self.invoke({"action": "list"}, {
+            "ok": True,
+            "agents": [{
+                "id": "stored-unreadable", "name": "Stored unreadable",
+                "capabilityPolicy": None, "capabilityPolicyUnavailable": True,
+            }],
+        })
+        self.assertEqual(missing_policy["agents"][0]["capabilities"], {"mode": "unavailable"})
 
     def test_run_returns_accepted_profile_session_and_run_ids(self):
         result, _ = self.invoke(
@@ -102,8 +169,65 @@ class PanelProfileToolTests(unittest.TestCase):
         self.assertEqual(result["run_id"], "run-123")
         self.assertEqual(result["status"], "queued")
 
+    def test_create_defaults_to_no_capabilities_and_returns_a_bounded_profile(self):
+        result, run = self.invoke(
+            {"action": "create", "name": "Researcher", "role": "Trace claims to sources.", "idempotency_key": "request-42"},
+            {"ok": True, "agent": {
+                "id": "created-abc", "name": "Researcher", "description": "Trace claims to sources.",
+                "sessionId": "profile-session", "capabilityPolicy": {
+                    "version": 1, "tools": {"mode": "allow", "ids": []}, "skills": {"mode": "allow", "ids": []},
+                },
+            }},
+        )
+        self.assertEqual(result, {"ok": True, "created": True, "agent_id": "created-abc", "session_id": "profile-session", "name": "Researcher", "role": "Trace claims to sources.", "working_directory": "", "tools": 0, "skills": 0})
+        request = json.loads(run.call_args.kwargs["input"])
+        self.assertEqual(request["tools"], [])
+        self.assertEqual(request["skills"], [])
+
+        with patch.object(tool.subprocess, "run") as blocked:
+            invalid = json.loads(tool.panel_agents_tool({"action": "create", "name": "Unsafe", "role": "Escalate.", "idempotency_key": "bad", "tools": ["delegate_task"]}))
+        self.assertFalse(invalid["ok"])
+        blocked.assert_not_called()
+        for field in ("tools", "skills"):
+            with patch.object(tool.subprocess, "run") as blocked:
+                malformed = json.loads(tool.panel_agents_tool({"action": "create", "name": "Malformed", "role": "Stay bounded.", "idempotency_key": "bad-shape", field: [{}]}))
+            self.assertFalse(malformed["ok"])
+            blocked.assert_not_called()
+
+    def test_create_forwards_only_an_absolute_working_directory(self):
+        result, run = self.invoke(
+            {"action": "create", "name": "Reader", "role": "Read sources.", "idempotency_key": "reader-folder", "working_directory": str(self.root)},
+            {"ok": True, "agent": {
+                "id": "created-reader", "name": "Reader", "description": "Read sources.",
+                "workingDirectory": str(self.root), "sessionId": "reader-session", "capabilityPolicy": {
+                    "version": 1, "tools": {"mode": "allow", "ids": []}, "skills": {"mode": "allow", "ids": []},
+                },
+            }},
+        )
+        self.assertEqual(result["working_directory"], str(self.root))
+        self.assertEqual(json.loads(run.call_args.kwargs["input"])["working_directory"], str(self.root))
+        for value in ("relative", "", "\0bad"):
+            with patch.object(tool.subprocess, "run") as blocked:
+                invalid = json.loads(tool.panel_agents_tool({"action": "create", "name": "Reader", "role": "Read sources.", "idempotency_key": "bad-folder", "working_directory": value}))
+            self.assertFalse(invalid["ok"])
+            blocked.assert_not_called()
+
+    def test_schema_requires_independent_scoped_work_and_terminal_result_collection(self):
+        description = tool.TOOL_SCHEMA["description"]
+        task_description = tool.TOOL_SCHEMA["parameters"]["properties"]["task"]["description"]
+        self.assertIn("beneficial, independent work", description)
+        self.assertIn("non-overlapping scope", description)
+        self.assertIn("accepted, not completed", description)
+        self.assertIn("terminal state", description)
+        self.assertIn("verification", task_description)
+        self.assertIn("non-overlapping scope", task_description)
+        self.assertIn("Required for run, status, and stop", tool.TOOL_SCHEMA["parameters"]["properties"]["agent_id"]["description"])
+        self.assertIn("Required for status and stop", tool.TOOL_SCHEMA["parameters"]["properties"]["run_id"]["description"])
+
     def test_status_and_stop_return_bounded_public_result_only(self):
-        payload = {"ok": True, "agentId": "researcher_1", "sessionId": "profile-session", "run": {
+        payload = {"ok": True, "agentId": "researcher_1", "sessionId": "profile-session", "statusWait": {
+            "terminal": True, "timedOut": False, "waitedMs": 842, "observedAt": "2026-10-21T21:20:58.205Z", "automaticDelivery": False,
+        }, "run": {
             "id": "run-123", "state": "complete", "statusLabel": "Finished",
             "response": "A concise verified result.", "error": "", "executionActive": False,
             "executionCancelRequestedAt": None, "permission": {"requestId": "private"},
@@ -111,6 +235,10 @@ class PanelProfileToolTests(unittest.TestCase):
         }}
         status, _ = self.invoke({"action": "status", "agent_id": "researcher_1", "run_id": "run-123"}, payload)
         self.assertEqual(status["result"], "A concise verified result.")
+        self.assertTrue(status["terminal"])
+        self.assertFalse(status["wait_timed_out"])
+        self.assertEqual(status["waited_ms"], 842)
+        self.assertFalse(status["automatic_delivery"])
         self.assertNotIn("permission", status)
         self.assertNotIn("textOnly", status)
         stop_payload = {**payload, "run": {**payload["run"], "state": "cancelled", "executionCancelRequestedAt": "now"}}
@@ -131,7 +259,7 @@ class PanelProfileToolTests(unittest.TestCase):
             run.assert_not_called()
 
     def test_cli_timeout_is_honest_and_does_not_return_stderr(self):
-        with patch.object(tool.subprocess, "run", side_effect=tool.subprocess.TimeoutExpired("node", 15, stderr="secret")):
+        with patch.object(tool.subprocess, "run", side_effect=tool.subprocess.TimeoutExpired("node", 20, stderr="secret")):
             result = json.loads(tool.panel_agents_tool({"action": "run", "agent_id": "agent", "task": "Do work"}))
         self.assertFalse(result["ok"])
         self.assertIn("check the agent's status", result["error"])
@@ -146,7 +274,7 @@ class PanelProfileToolTests(unittest.TestCase):
         self.assertFalse(oversized["ok"])
         self.assertNotIn("secret", repr(oversized))
 
-    @unittest.skipUnless(HERMES_REPO.is_dir(), "installed Hermes runtime is not present")
+    @unittest.skipUnless(HERMES_AVAILABLE, "installed Hermes runtime is not present")
     def test_registers_adapter_tool_without_replacing_an_existing_tool(self):
         from tools.registry import registry
 
@@ -165,7 +293,7 @@ class PanelProfileToolTests(unittest.TestCase):
         definitions = registry.get_definitions(resolved, quiet=True)
         self.assertEqual(definitions[0]["function"]["name"], tool.TOOL_NAME)
 
-    @unittest.skipUnless(HERMES_REPO.is_dir(), "installed Hermes runtime is not present")
+    @unittest.skipUnless(HERMES_AVAILABLE, "installed Hermes runtime is not present")
     def test_control_adapter_adds_only_the_registered_profile_toolset(self):
         agent = type("Agent", (), {"model": ""})()
         manager = adapter.ControlSessionManager()
@@ -189,7 +317,7 @@ class PanelProfileToolTests(unittest.TestCase):
             manager._make_agent(session_id="native", cwd="/tmp")
         self.assertNotIn("panel_agents", native_build.call_args.kwargs["enabled_toolsets"])
 
-    @unittest.skipUnless(HERMES_REPO.is_dir(), "installed Hermes runtime is not present")
+    @unittest.skipUnless(HERMES_AVAILABLE, "installed Hermes runtime is not present")
     def test_planning_only_adapter_has_no_tools_or_toolsets(self):
         agent = type("Agent", (), {
             "model": "", "tools": ["terminal"], "valid_tool_names": {"terminal"},

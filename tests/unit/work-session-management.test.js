@@ -62,7 +62,8 @@ test("active and stopping runs block folder/archive changes while rename and pin
   assert.equal((await patch(session.id, { workingDirectory: temporary })).status, 409);
   assert.equal((await patch(session.id, { archived: true })).status, 409);
   assert.equal((await patch(session.id, { name: "Still working", pinned: true })).status, 200);
-  runs.updateAssistantRun(run.id, { state: "complete", response: "Early result", executionActive: true, pid: process.pid });
+  assert.ok(runs.beginAssistantRun(run.id));
+  runs.updateAssistantRun(run.id, { state: "complete", response: "Early result" });
   assert.throws(() => sessions.updateWorkSession(session.id, { archived: true }), conflict);
   assert.equal(sessions.listWorkSessions()[0].activeRun.state, "complete");
   runs.finishAssistantExecution(run.id);
@@ -128,6 +129,18 @@ test("session edits validate booleans, folder paths and missing IDs", async () =
   assert.equal(sessions.getWorkSession(session.id).pinned, false);
 });
 
+test("renaming keeps an unchanged deleted working folder without revalidating it", () => {
+  reset();
+  const folder = fs.mkdtempSync(path.join(temporary, "deleted-session-folder-"));
+  const session = sessions.createWorkSession({ name: "Before", workingDirectory: folder });
+  const savedFolder = session.workingDirectory;
+  fs.rmSync(folder, { recursive: true, force: true });
+  const renamed = sessions.updateWorkSession(session.id, { name: "After", workingDirectory: savedFolder });
+  assert.equal(renamed.name, "After");
+  assert.equal(renamed.workingDirectory, savedFolder);
+  assert.throws(() => sessions.updateWorkSession(session.id, { workingDirectory: path.join(temporary, "another-missing-folder") }), /does not exist/);
+});
+
 test("session switching requires server acceptance, not a locally allocated action ID", () => {
   assert.equal(sessionSwitchBlocked({ state: "idle" }), false);
   // callChat allocates the ID and sets CHAT_PENDING before its POST resolves.
@@ -179,7 +192,8 @@ test("global admission is bounded to four live requests and reopens after one st
   assert.equal(runs.MAX_CONCURRENT_ASSISTANT_RUNS, 4);
   assert.throws(() => runs.createAssistantRun({ id: "fifth", sessionId: all[4].id, text: "Wait" }), error => error.status === 409 && /up to 4/.test(error.message));
   assert.equal(runs.createAssistantRun({ id: active[0].id, sessionId: all[0].id }).id, active[0].id);
-  runs.updateAssistantRun(active[0].id, { state: "complete", response: "Answer ready", executionActive: true, pid: process.pid });
+  assert.ok(runs.beginAssistantRun(active[0].id));
+  runs.updateAssistantRun(active[0].id, { state: "complete", response: "Answer ready" });
   assert.throws(() => runs.createAssistantRun({ id: "fifth", sessionId: all[4].id, text: "Still wait" }), conflict);
   runs.finishAssistantExecution(active[0].id);
   assert.equal(runs.createAssistantRun({ id: "fifth", sessionId: all[4].id, text: "Now admitted" }).state, "queued");

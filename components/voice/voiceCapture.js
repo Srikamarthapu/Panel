@@ -1,5 +1,17 @@
 export const MICROPHONE_REQUEST_TIMEOUT_MS = 15000;
 
+export function microphoneConstraints(deviceId = "") {
+  const selected = typeof deviceId === "string" ? deviceId : "";
+  return {
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      ...(selected ? { deviceId: { exact: selected } } : {}),
+    },
+  };
+}
+
 export class VoiceCaptureTimeoutError extends Error {
   constructor(message = "Microphone permission timed out") {
     super(message);
@@ -65,13 +77,4 @@ export function createVoiceRecorder(stream, MediaRecorderClass, onChunk) {
     if (event.data?.size > 0) onChunk?.(event.data);
   };
   return recorder;
-}
-
-export function deriveVadThresholds(noiseFloor) {
-  const floor = Number.isFinite(noiseFloor) ? Math.max(0, noiseFloor) : 0;
-  return {
-    silence: Math.max(0.002, floor * 1.35),
-    speech: Math.max(0.008, floor * 2.2),
-    noisy: floor >= 0.04,
-  };
 }

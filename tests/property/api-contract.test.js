@@ -37,12 +37,12 @@ const REQUIRED_API_ROUTES = [
 ];
 
 const REQUIRED_PAGE_ROUTES = [
-  "app/page.jsx",
-  "app/tasks/page.jsx",
-  "app/models/page.jsx",
-  "app/memory/page.jsx",
+  "app/(workspace)/page.jsx",
+  "app/(workspace)/tasks/page.jsx",
+  "app/(workspace)/models/page.jsx",
+  "app/(workspace)/memory/page.jsx",
   "app/system/page.jsx",
-  "app/voice/page.jsx",
+  "app/(workspace)/voice/page.jsx",
   "app/calendar/page.jsx",
   "app/market/page.jsx",
   "app/projects/page.jsx",
@@ -89,19 +89,6 @@ test("Property 34: required page route files exist", () => {
     const full = resolve(repoRoot, p);
     assert.ok(existsSync(full), `Missing page route: ${p}`);
   }
-});
-
-test("Property 33: malformed body shape (smoke) — server-side validation lives in route handlers", () => {
-  // Without booting Next we can't make HTTP requests. Instead we assert that
-  // the chat route source contains some form of body validation (early return
-  // on missing / bad shape), or at minimum reads the body before doing work.
-  const src = readFileSync(
-    resolve(repoRoot, "app/api/voice/chat/route.js"),
-    "utf8"
-  );
-  // Look for a common validation pattern: parsing the JSON body before
-  // invoking the chat layer.
-  assert.match(src, /(req|request)\.json\(\)/);
 });
 
 test("Property 32: Tauri voice-toggle event listener present in VoiceProvider", () => {

@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 const root = path.resolve(process.argv[2] || ".");
-const ignored = new Set([".git", "node_modules", ".next", "test-results", "playwright-report", "__pycache__", ".pytest_cache"]);
+const ignored = new Set([".git", "node_modules", ".next", "test-results", "playwright-report", "__pycache__", ".pytest_cache", "graphify-out"]);
 const patterns = [
   ["private key", /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/],
   ["provider secret", /\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{24,}\b/],

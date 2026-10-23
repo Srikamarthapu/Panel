@@ -1,8 +1,8 @@
-import { cancelWorkTask, createWorkTask, listWorkTasks, queueWorkerStatus } from "@/lib/work-queue.js";
+import { cancelWorkTask, createWorkTask, listPublicWorkTasks, queueWorkerStatus } from "@/lib/work-queue.js";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export function GET() {
-  try { return Response.json({ tasks: listWorkTasks(), worker: queueWorkerStatus() }, { headers: { "Cache-Control": "no-store" } }); }
+  try { return Response.json({ tasks: listPublicWorkTasks(), worker: queueWorkerStatus() }, { headers: { "Cache-Control": "no-store" } }); }
   catch { return Response.json({ error: "Saved tasks could not be read." }, { status: 500 }); }
 }
 export async function POST(request) {

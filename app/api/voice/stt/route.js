@@ -1,7 +1,9 @@
-import { getVoiceConfig } from "@/lib/voice";
-import { requestSpeechRecognition, speechFailure } from "@/lib/speech-recognition.js";
+import { getVoiceConfig } from "../../../../lib/voice.js";
+import { requestSpeechRecognition, speechFailure } from "../../../../lib/speech-recognition.js";
+import { readBoundedFormData, RequestBodyTooLargeError } from "../../../../lib/bounded-request-body.js";
 
 const MAX_AUDIO_BYTES = 12 * 1024 * 1024;
+const MAX_STT_BODY_BYTES = MAX_AUDIO_BYTES + 256 * 1024;
 function failure(status, code, message, retryable = false) {
   return Response.json({ error: "Speech recognition unavailable", code, message, retryable }, { status });
 }
@@ -9,7 +11,14 @@ function failure(status, code, message, retryable = false) {
 export async function POST(request) {
   const startedAt = Date.now();
   try {
-    const formData = await request.formData();
+    let formData;
+    try {
+      formData = await readBoundedFormData(request, MAX_STT_BODY_BYTES);
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) return failure(413, "STT_AUDIO_TOO_LARGE", "This recording is too large. Try a shorter recording.");
+      if (request.signal.aborted) return failure(499, "STT_CANCELLED", "Recording cancelled.");
+      return failure(400, "STT_INVALID_FORM", "The recording upload was malformed. Please record it again.");
+    }
     const file = formData.get("file");
     if (!file || typeof file.arrayBuffer !== "function") return failure(400, "STT_NO_AUDIO", "No recording was received. Please try speaking again.");
     if (file.size < 100) return failure(400, "STT_EMPTY_AUDIO", "The recording was too short. Please try speaking again.");

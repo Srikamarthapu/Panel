@@ -12,7 +12,7 @@ test("idle voice controls explain the gesture without unrelated activity", async
   await status(page);
   await page.goto("/");
   const dock = page.locator(".voiceDock");
-  await expect(dock.getByText("Hold the button, Space, or Enter. Release to send.")).toBeVisible();
+  await expect(dock.getByText("Hold the avatar or Space to talk. Release to send.")).toBeVisible();
   await expect(dock.getByText("Unrelated background job")).toHaveCount(0);
 });
 
@@ -22,10 +22,10 @@ test("a pending microphone request immediately shows connecting feedback", async
     Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: () => new Promise(() => {}) } });
   });
   await page.goto("/");
-  await page.getByRole("group", { name: "Voice mode" }).getByRole("button", { name: "Hands-free", exact: true }).click();
-  await page.getByRole("button", { name: "Start conversation", exact: true }).click();
-  await expect(page.getByRole("button", { name: "End conversation", exact: true })).toBeVisible();
-  await expect(page.locator(".voiceDock__caption--polite")).toHaveText("Waiting for microphone permission");
+  await page.locator(".talkWorkspace__mode").click();
+  await page.getByRole("button", { name: /Start conversation with/ }).click();
+  await expect(page.getByRole("button", { name: /End conversation with/ })).toBeVisible();
+  await expect(page.locator(".talkWorkspace__caption p")).toHaveText("Hermes is not listening until microphone access is ready.");
 });
 
 test("denied microphone permission offers a retry and a readable error", async ({ page }) => {
@@ -34,8 +34,8 @@ test("denied microphone permission offers a retry and a readable error", async (
     Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: () => Promise.reject(new DOMException("Denied for this test", "NotAllowedError")) } });
   });
   await page.goto("/");
-  await page.getByRole("group", { name: "Voice mode" }).getByRole("button", { name: "Hands-free", exact: true }).click();
-  await page.getByRole("button", { name: "Start conversation", exact: true }).click();
+  await page.locator(".talkWorkspace__mode").click();
+  await page.getByRole("button", { name: /Start conversation with/ }).click();
   await expect(page.getByRole("button", { name: /Retry microphone/ })).toBeVisible();
   await expect(page.locator(".voiceDock")).toHaveAttribute("data-state", "error");
 });

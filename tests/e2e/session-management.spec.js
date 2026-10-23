@@ -6,6 +6,16 @@ const sessions = [
   { id: "qa-beta", name: "QA Beta", messages: [{ id: "beta-answer", role: "hermes", text: "Beta history stays in Beta." }] },
 ];
 
+test("renaming a session omits its unchanged working folder", async ({ page }) => {
+  const fixture = await mockWorkspace(page, { sessions });
+  await page.goto("/chat");
+  await page.getByRole("button", { name: "Session details" }).click();
+  const dialog = page.getByRole("dialog", { name: "Session details" });
+  await dialog.getByRole("textbox", { name: "Session name", exact: true }).fill("QA Alpha renamed only");
+  await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
+  expect(fixture.requests.sessionPatches).toContainEqual({ id: "qa-alpha", patch: { name: "QA Alpha renamed only" } });
+});
+
 test("chat session details restore focus, edit its folder, and create a separate session", async ({ page }) => {
   const fixture = await mockWorkspace(page, { sessions });
   await page.goto("/chat");
@@ -105,7 +115,7 @@ test("session switching stays gated until the chat request is accepted, then onl
   await expect(page.getByRole("button", { name: "New session" })).toBeDisabled();
   await page.getByRole("button", { name: "Agents" }).click();
   const agents = page.getByRole("complementary", { name: "Agent sessions" });
-  const newAgent = agents.getByRole("button", { name: "New agent", exact: true });
+  const newAgent = agents.getByRole("button", { name: "New teammate", exact: true });
   // Creating a profile does not switch the selected conversation or cancel it.
   await expect(newAgent).toBeEnabled();
 
@@ -116,11 +126,12 @@ test("session switching stays gated until the chat request is accepted, then onl
   expect(received).toMatchObject({ sessionId: "qa-alpha", text: "Keep working while I switch sessions." });
 
   await newAgent.click();
-  const newAgentDialog = page.getByRole("dialog", { name: "New agent", exact: true });
-  await newAgentDialog.getByRole("textbox", { name: "Agent name", exact: true }).fill("QA delegated review");
-  await newAgentDialog.getByRole("textbox", { name: "SOUL.md", exact: true }).fill("Review requested changes and report verified findings.");
+  const newAgentDialog = page.getByRole("dialog", { name: "Create a teammate", exact: true });
+  await newAgentDialog.getByRole("textbox", { name: "Teammate name", exact: true }).fill("QA delegated review");
+  await newAgentDialog.getByRole("textbox", { name: "Role and working instructions", exact: true }).fill("Review requested changes and report verified findings.");
+  await newAgentDialog.getByText("Advanced setup", { exact: false }).click();
   await newAgentDialog.getByRole("textbox", { name: /Working folder/ }).fill("/QA/agents/review");
-  await newAgentDialog.getByRole("button", { name: "Create agent", exact: true }).click();
+  await newAgentDialog.getByRole("button", { name: "Create teammate", exact: true }).click();
   await expect(newAgentDialog).toBeHidden();
   await expect(picker).toHaveValue("qa-alpha");
   expect(fixture.records.get("qa-alpha").activeRun).toMatchObject({ id: received.actionId, state: "active" });
@@ -218,5 +229,56 @@ test("narrow chat keeps session controls usable, preserves per-session drafts, a
   await expect(composer).toHaveValue("A draft for Alpha");
   await picker.selectOption("qa-beta");
   await expect(composer).toHaveValue("A draft for Beta");
+  expect(await page.evaluate(() => ({
+    alpha: sessionStorage.getItem("panel.draft.qa-alpha"),
+    beta: sessionStorage.getItem("panel.draft.qa-beta"),
+  }))).toEqual({ alpha: "A draft for Alpha", beta: "A draft for Beta" });
   expect(await composer.evaluate(element => getComputedStyle(element).fontSize)).toBe("16px");
+});
+
+test("returning to Chat reconciles externally saved completed work without losing the draft", async ({ page }) => {
+  const fixture = await mockWorkspace(page, { sessions });
+  let speechRequests = 0;
+  await page.route("**/api/voice/tts", route => {
+    speechRequests++;
+    return route.fulfill({ status: 503, json: { error: "History reconciliation must stay silent" } });
+  });
+  await page.goto("/chat");
+  const composer = page.getByRole("textbox", { name: "Message Hermes" });
+  await composer.fill("Keep this draft while I review the teammate.");
+  const workspaceNav = page.getByRole("navigation", { name: "Workspace navigation" });
+  await workspaceNav.getByRole("link", { name: "Agents", exact: true }).click();
+  await expect(page).toHaveURL(/\/agents$/);
+  await page.getByRole("navigation", { name: "Agent settings" }).getByRole("link", { name: "Models", exact: true }).click();
+  await expect(page).toHaveURL(/\/models$/);
+
+  const record = fixture.records.get("qa-alpha");
+  const outcome = {
+    version: 1,
+    state: "complete",
+    finishedAt: "2026-10-13T20:05:00.000Z",
+    execution: { active: false, stopping: false },
+    summary: { text: "The saved teammate updated the formatter.", provenance: "agent" },
+    observed: { tools: [], files: [] },
+    verified: {
+      status: "available",
+      items: [{ kind: "file", path: "/QA/projects/alpha/src/format.js", source: "runtime_receipt", label: "edit completed" }],
+      note: "Panel retained the completed edit receipt.",
+    },
+  };
+  record.messages.push(
+    { id: "external-write:user", runId: "external-write", role: "user", text: "Update the formatter from the saved teammate." },
+    { id: "external-write:result", runId: "external-write", role: "hermes", text: "The saved teammate updated the formatter.", outcome },
+  );
+  record.session.updatedAt = new Date(Date.parse(record.session.updatedAt) + 1000).toISOString();
+
+  await workspaceNav.getByRole("link", { name: "Chat", exact: true }).click();
+  await expect(page).toHaveURL(/\/chat$/);
+  await expect(composer).toHaveValue("Keep this draft while I review the teammate.");
+  await expect(page.getByText("Update the formatter from the saved teammate.", { exact: true })).toHaveCount(1);
+  await expect(page.getByText("The saved teammate updated the formatter.", { exact: true })).toHaveCount(1);
+  await page.getByText("Review work", { exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Completed action receipts", exact: true })).toBeVisible();
+  await expect(page.getByText("/QA/projects/alpha/src/format.js", { exact: true })).toBeVisible();
+  expect(speechRequests).toBe(0);
 });

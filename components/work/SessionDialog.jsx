@@ -29,7 +29,9 @@ export default function SessionDialog({ session, agent = false, onClose, onSaved
     sending.current = true;
     setPending(true); setError("");
     try {
-      const input = { name: name.trim() || (agent ? "New agent" : "New session"), ...(!working ? { workingDirectory: directory.trim() || null } : {}) };
+      const nextDirectory = directory.trim() || null;
+      const savedDirectory = session?.workingDirectory || null;
+      const input = { name: name.trim() || (agent ? "New agent" : "New session"), ...(!working && (!session || nextDirectory !== savedDirectory) ? { workingDirectory: nextDirectory } : {}) };
       const result = session ? await work.updateSession(session.id, input) : await work.createSession(input);
       onSaved?.(result); onClose();
     } catch (failure) { setError(failure.message); setPending(false); sending.current = false; }

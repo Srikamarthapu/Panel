@@ -145,12 +145,3 @@
 
 .voiceSettings__saveStatus { margin: 0; font-size: 11px; line-height: 1.5; color: oklch(from #a9c9b8 l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue))); }
 .voiceSettings__saveStatus.is-error { color: #e2bbaa; }
-
-.voiceSettings__modelPicker { display: grid; gap: 10px; min-width: 0; }
-.voiceSettings__modelSearch, .voiceSettings__customModel > label { display: block; min-width: 0; }
-.voiceSettings__modelPicker :is(input, select) { width: 100%; min-width: 0; min-height: 36px; background: #202524; border: 1px solid oklch(from #3c4941 l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue))); border-radius: 7px; padding: 8px 10px; color: oklch(from #dce6df l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue))); font-size: 12px; }
-.voiceSettings__modelLinks { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-.voiceSettings__modelLinks :is(button, a) { border: 0; padding: 2px 0; border-radius: 0; background: transparent; color: oklch(from #afc4b6 l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue))); font-size: 10px; text-decoration: none; }
-.voiceSettings__modelLinks :is(button, a):hover { color: oklch(from #e0efe5 l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue))); }
-.voiceSettings__customModel { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
-.voiceSettings__modelPicker .voiceSettings__help { font-size: 11px; }

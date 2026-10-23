@@ -76,13 +76,14 @@ export default function InterfacePreferencesProvider({ children }) {
     root.dataset.panelTextSize = preferences.textSize;
     root.dataset.panelConversationSpacing = preferences.conversationSpacing;
     root.dataset.panelAccent = preferences.avatarColor;
+    root.dataset.panelSidebar = preferences.sidebarCollapsed ? "collapsed" : "expanded";
     root.style.setProperty("--panel-avatar-color", palette.color);
   }, [preferences, palette, reducedMotion, preferencesLoaded]);
 
   const resetPreferences = useCallback(() => {
-    updatePreferences(DEFAULT_INTERFACE_PREFERENCES);
+    updatePreferences({ ...DEFAULT_INTERFACE_PREFERENCES, sidebarCollapsed: preferences.sidebarCollapsed });
     setAvatar("orb");
-  }, [updatePreferences, setAvatar]);
+  }, [preferences.sidebarCollapsed, updatePreferences, setAvatar]);
   const value = useMemo(() => ({ preferences, updatePreferences, resetPreferences, avatar, setAvatar, reducedMotion, palette, persistent }),
     [preferences, updatePreferences, resetPreferences, avatar, setAvatar, reducedMotion, palette, persistent]);
 

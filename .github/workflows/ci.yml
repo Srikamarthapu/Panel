@@ -12,12 +12,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: node scripts/release/check.mjs .
+      - run: npm run release:manifest:verify
       - run: npm ci
+      - run: npm audit --omit=dev
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: python3 -m pip install PyYAML
+          cache: pip
+      - run: python3 -m pip install -r requirements-test.txt
       - run: npm test
+      - run: npm run test:browser-server
       - run: npx playwright install chromium
       - run: npm run test:e2e && npm run test:smoke
       - run: npm run build

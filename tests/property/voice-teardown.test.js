@@ -12,11 +12,10 @@
 //   stopAllTracks
 //   closeAudioContext
 //   stopVisualizer
-//   clearVadInterval
 //   syncContinuous(on:false)
 //
 // Failure injection (the F ⊆ {recorder, tracks, audioContext, vizRAF,
-// vadInterval} subset described in design.md Property 12) lives in the
+// detector} subset described in design.md Property 12) lives in the
 // imperative shell, not the reducer. The reducer surfaces failures via the
 // TEARDOWN_STEP_FAILED event, which must emit one sanitized kind="log"
 // Activity_Item per failure. The second test exercises that handler with
@@ -40,7 +39,6 @@ const ORDER = [
   "stopAllTracks",
   "closeAudioContext",
   "stopVisualizer",
-  "clearVadInterval",
   "syncContinuous",
 ];
 
@@ -165,7 +163,7 @@ test("Property 12: TEARDOWN_STEP_FAILED emits sanitized log Activity_Item per fa
   fc.assert(
     fc.property(
       // Step name is bounded to the documented set.
-      fc.constantFrom("recorder", "tracks", "audioContext", "vizRAF", "vadInterval"),
+      fc.constantFrom("recorder", "tracks", "audioContext", "vizRAF", "speechDetector"),
       // Arbitrary error message: deliberately includes control chars,
       // long inputs, and synthetic Authorization headers / blob markers to
       // exercise the sanitizer in voiceMachine.js.

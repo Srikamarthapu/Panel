@@ -11,7 +11,7 @@ test("cue preparation begins before acceptance but never starts audio", async ()
   } });
   await Promise.resolve(); await Promise.resolve();
   assert.equal(request.url, "/api/voice/tts");
-  assert.deepEqual(JSON.parse(request.options.body), { text: "I’ll check your calendar.", modelId: VOICE_FEEDBACK_MODEL });
+  assert.deepEqual(JSON.parse(request.options.body), { text: "I’ll check your calendar.", modelId: VOICE_FEEDBACK_MODEL, latencyOptimized: true });
   const response = new Response(new Uint8Array(256));
   finish(response);
   const payload = await prepared.promise;

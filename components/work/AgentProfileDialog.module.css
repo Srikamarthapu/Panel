@@ -12,7 +12,180 @@
   font-size: 13px;
 }
 
+.templates {
+  margin: 4px 0 17px;
+}
+
+.templates > span {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--fg-2);
+  font-size: 10px;
+}
+
+.templates > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.templates button {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-2);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.templates button:hover {
+  border-color: var(--line-hot);
+  color: var(--fg-1);
+}
+
+.advanced {
+  margin-top: 20px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-0) 45%, transparent);
+}
+
+.capabilities {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.capabilityHead {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.capabilityHead h3 {
+  margin: 0;
+  color: var(--fg-1);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.capabilityHead p,
+.capabilityBody > p,
+.boundaryNote p,
+.inherited {
+  margin: 5px 0 0;
+  color: var(--fg-2);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.capabilityHead button {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--line-hot);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg-1);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.inherited {
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-0) 60%, transparent);
+}
+
+.capabilityDisclosure {
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-0) 45%, transparent);
+}
+.capabilityDisclosure > summary { display:flex; justify-content:space-between; gap:12px; padding:12px; color:var(--fg-1); font-size:11px; cursor:pointer; }
+.capabilityDisclosure > summary small { color:var(--fg-2); font-size:9px; }
+.capabilityBody { padding:0 12px 12px; border-top:1px solid var(--line); }
+.capabilityFilters { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:center; margin-top:10px; }
+.capabilityFilters label { margin:0; }
+.capabilityFilters input[type=search] { width:100%; margin:0; padding:9px 10px; border:1px solid var(--line); border-radius:7px; background:var(--bg-0); color:var(--fg-1); font:inherit; font-size:11px; }
+.selectedOnly { display:flex; align-items:center; gap:6px; color:var(--fg-2); font-size:10px; white-space:nowrap; }
+.selectedOnly input { accent-color:var(--accent); }
+.capabilityGroup {
+  margin: 14px 0 0;
+}
+.capabilityGroup h4 { margin:0 0 7px; color:var(--fg-2); font-size:9px; letter-spacing:.07em; text-transform:uppercase; }
+
+.optionGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.optionGrid label {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  margin: 0;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-0) 50%, transparent);
+  cursor: pointer;
+}
+.optionGrid label[data-unavailable] { opacity:.72; border-style:dashed; }
+
+.optionGrid input { margin: 2px 0 0; accent-color: var(--accent); }
+.optionGrid strong, .optionGrid small { display: block; }
+.optionGrid strong { color: var(--fg-1); font-size: 11px; font-weight: 600; }
+.optionGrid small { margin-top: 3px; color: var(--fg-2); font-size: 9px; line-height: 1.4; }
+
+.boundaryNote {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--line-hot);
+  background: color-mix(in srgb, var(--bg-0) 45%, transparent);
+}
+
+.boundaryNote p:first-child { margin-top: 0; }
+.modeNote { margin:12px 0 0; padding:10px 12px; border:1px solid #66533e; border-radius:8px; background:#2b241b; color:#dbc8ad; font-size:10px; line-height:1.55; }
+.policyWarning { margin:12px 0 0; padding:10px 12px; border:1px solid #765243; border-radius:8px; background:#2e211c; color:#efc4af; font-size:10px; line-height:1.55; }
+.noMatches { margin:14px 0 0; color:var(--fg-2); font-size:10px; }
+
+.advanced summary {
+  min-height: 48px;
+  padding: 14px;
+  color: var(--fg-1);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.advanced summary span {
+  margin-left: 8px;
+  color: var(--fg-2);
+  font-size: 10px;
+}
+
+.advancedFields {
+  padding: 0 14px 14px;
+  border-top: 1px solid var(--line);
+}
+
+.advancedFields > label:first-child { margin-top: 14px; }
+
 .select:focus-visible,
+.templates button:focus-visible,
+.capabilityHead button:focus-visible,
+.capabilityDisclosure > summary:focus-visible,
+.capabilityFilters input:focus-visible,
+.optionGrid input:focus-visible,
+.advanced summary:focus-visible,
 .pathRow button:focus-visible,
 .pathRow code:focus-visible {
   outline: 2px solid var(--accent);
@@ -98,4 +271,5 @@
 
 @media (max-width: 560px) {
   .select { font-size: 16px; }
+  .optionGrid { grid-template-columns: 1fr; }
 }

@@ -25,6 +25,27 @@ test("cancellation removes queued work and aborts requests before recorder teard
   assert.ok(!state.effects.some((item) => item.kind === "callChat"));
 });
 
+test("cancellation revokes audio queued before the effect runner claims it", () => {
+  let state = {
+    ...initialWrapper,
+    state: { ...initialWrapper.state, state: "speaking" },
+    effects: [{ effectId: 1, kind: "playAudio", url: "blob:queued-answer" }],
+    effectSequence: 1,
+  };
+  state = queuedVoiceReducer(state, { type: "CANCEL_CURRENT" });
+  assert.equal(state.effects.filter((effect) => effect.kind === "playAudio").length, 0);
+  assert.deepEqual(
+    state.effects.filter((effect) => effect.kind === "revokeURL").map((effect) => effect.url),
+    ["blob:queued-answer"],
+  );
+  assert.equal(state.effects.filter((effect) => effect.kind === "revokeURL").length, 1);
+  state = queuedVoiceReducer(state, { type: "CANCEL_CURRENT" });
+  assert.deepEqual(
+    state.effects.filter((effect) => effect.kind === "revokeURL").map((effect) => effect.url),
+    ["blob:queued-answer"],
+  );
+});
+
 test("long user text survives in transcript and outbound request; long replies retain their full text", () => {
   const text = "a".repeat(MAX_USER_TEXT);
   let state = reducer(initialWrapper, { type: "STT_OK", text, textOnly: true });

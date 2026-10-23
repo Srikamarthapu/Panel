@@ -9,12 +9,17 @@ import unittest
 from unittest.mock import patch
 from contextlib import redirect_stdout
 
-os.environ.setdefault("HERMES_REPO", str(Path.home() / ".hermes/hermes-agent"))
-adapter_path = Path(__file__).resolve().parents[2] / "scripts/voice/panel-acp.py"
-spec = importlib.util.spec_from_file_location("panel_acp_under_test", adapter_path)
-adapter = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(adapter)
-from acp.agent.router import build_agent_router
+HERMES_REPO = Path(os.environ.get("HERMES_REPO", str(Path.home() / ".hermes/hermes-agent")))
+HERMES_AVAILABLE = (HERMES_REPO / "hermes_cli").is_dir()
+os.environ["HERMES_REPO"] = str(HERMES_REPO)
+adapter = None
+build_agent_router = None
+if HERMES_AVAILABLE:
+    adapter_path = Path(__file__).resolve().parents[2] / "scripts/voice/panel-acp.py"
+    spec = importlib.util.spec_from_file_location("panel_acp_under_test", adapter_path)
+    adapter = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(adapter)
+    from acp.agent.router import build_agent_router
 
 
 class Database:
@@ -44,11 +49,12 @@ class Database:
         self.writes.append("metadata")
 
 
-class Manager(adapter.ControlSessionManager):
+class Manager(adapter.ControlSessionManager if HERMES_AVAILABLE else object):
     def _make_agent(self, **kwargs):
         return SimpleNamespace(model="chosen-model", session_id=kwargs["session_id"])
 
 
+@unittest.skipUnless(HERMES_AVAILABLE, "installed Hermes runtime is required for ACP restore contracts")
 class RestoreTests(unittest.TestCase):
     def test_existing_cli_history_is_adopted_without_any_persistence(self):
         db = Database()
@@ -71,6 +77,7 @@ class RestoreTests(unittest.TestCase):
         self.assertIsNone(manager.get_session("unknown"))
 
 
+@unittest.skipUnless(HERMES_AVAILABLE, "installed Hermes runtime is required for ACP turn contracts")
 class TurnInstructionTests(unittest.IsolatedAsyncioTestCase):
     async def test_turn_result_reports_only_provider_confirmed_usage_deltas(self):
         control = adapter.ControlACPAgent()

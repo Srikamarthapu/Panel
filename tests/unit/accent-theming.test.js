@@ -11,7 +11,7 @@ const ACCENT_STYLESHEETS = [
   "components/control/JevRouterSettings.module.css", "components/work/StartupScreen.module.css",
 ];
 // Status greens keep their meaning whatever the avatar color is.
-const SEMANTIC_SELECTOR = /\b(ok|online|up)\b|--tone-task|\.statusDot\[data-tone=muted\]|\.providerConnectionDot\s*\{|\.liveIndicator(?=\s*\{|::before)|\.modelAccessBadge\[data-state=(?:tested|verified)\]|\.providerConnectionDot\[data-connected=true\]|\.liveIndicator\[data-live=true\]|\.status\[data-active\]/;
+const SEMANTIC_SELECTOR = /\b(ok|online|up)\b|--(?:accent-color|success|warning|danger|info|tone-task)|\.statusDot\[data-tone=muted\]|\.providerConnectionDot\s*\{|\.liveIndicator(?=\s*\{|::before)|\.modelAccessBadge\[data-state=(?:tested|verified)\]|\.providerConnectionDot\[data-connected=true\]|\.liveIndicator\[data-live=true\]|\.status\[data-active\]/;
 const LITERAL = /#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b|rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*(?:,\s*[\d.]+\s*)?\)/g;
 
 function oklchOf(literal) {
@@ -29,7 +29,7 @@ function oklchOf(literal) {
   return { chroma: Math.hypot(a, bb), hue: (Math.atan2(bb, a) * 180 / Math.PI + 360) % 360 };
 }
 
-test("workspace accent tints follow the chosen avatar palette instead of fixed sage", () => {
+test("workspace neutrals do not retain fixed sage chroma", () => {
   const stray = [];
   for (const file of ACCENT_STYLESHEETS) {
     fs.readFileSync(file, "utf8").split("\n").forEach((line, index) => {
@@ -42,13 +42,14 @@ test("workspace accent tints follow the chosen avatar palette instead of fixed s
       }
     });
   }
-  assert.deepEqual(stray, [], "Wrap sage tints as oklch(from <sage> l calc(c * var(--accent-chroma)) calc(h + var(--accent-hue)))");
+  assert.deepEqual(stray, [], "Neutral colors must use gray tokens or the zero-chroma compatibility transform");
 });
 
-test("every non-default avatar palette re-hues the workspace accent", () => {
+test("foundational tokens stay neutral while every palette defines an intentional accent", () => {
   const css = fs.readFileSync("app/control-center.css", "utf8");
-  assert.match(css, /:root \{ --accent-hue:0; --accent-chroma:1; \}/);
+  assert.match(css, /:root \{ --accent-hue:0; --accent-chroma:0; --accent-color:#[0-9a-f]{6}; \}/);
+  for (const token of ["gray-0", "gray-12", "surface", "surface-raised", "surface-selected", "text", "text-muted", "border", "focus"]) assert.match(css, new RegExp(`--${token}:`), token);
   for (const key of Object.keys(AVATAR_PALETTES).filter(key => key !== "sage")) {
-    assert.match(css, new RegExp(`html\\[data-panel-accent=${key}\\] \\{ --accent-hue:-?[\\d.]+; --accent-chroma:[\\d.]+; \\}`), key);
+    assert.match(css, new RegExp(`html\\[data-panel-accent=${key}\\] \\{ --accent-color:#[0-9a-f]{6}; \\}`), key);
   }
 });

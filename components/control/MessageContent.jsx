@@ -1,9 +1,35 @@
-import { Fragment, memo } from "react";
+"use client";
+
+import { Fragment, memo, useEffect, useRef, useState } from "react";
+import { Check, Copy } from "lucide-react";
 
 // A small, inert Markdown renderer: model output never becomes HTML or script.
 // Fenced code, links, lists and tables stay useful without loading an editor.
 function safeHref(value) {
   return /^(https?:\/\/|mailto:|\/(?!\/)|#)/i.test(value) ? value : null;
+}
+
+const languageNames = { js: "JavaScript", jsx: "JavaScript", ts: "TypeScript", tsx: "TypeScript", py: "Python", sh: "Shell", bash: "Shell", zsh: "Shell", json: "JSON", css: "CSS", html: "HTML", md: "Markdown", sql: "SQL", yaml: "YAML", yml: "YAML" };
+function codeLanguage(info) {
+  const token = String(info || "").trim().split(/\s+/, 1)[0].replace(/[^a-zA-Z0-9_+#.-]/g, "").slice(0, 30);
+  return languageNames[token.toLowerCase()] || token || "Plain text";
+}
+
+function CodeBlock({ info, code }) {
+  const language = codeLanguage(info);
+  const [status, setStatus] = useState("");
+  const timer = useRef(null);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  async function copy() {
+    clearTimeout(timer.current);
+    try { await navigator.clipboard.writeText(code); setStatus("Copied"); }
+    catch { setStatus("Could not copy"); }
+    timer.current = setTimeout(() => setStatus(""), 2400);
+  }
+  return <div className="messageCode" role="group" aria-label={`${language} code block`}>
+    <div className="messageCode__bar"><span className="messageCode__language">{language}</span><button type="button" onClick={copy} aria-label={`Copy ${language} code`}>{status === "Copied" ? <Check size={13} /> : <Copy size={13} />}<span aria-live="polite">{status || "Copy"}</span></button></div>
+    <pre tabIndex={0}><code>{code}</code></pre>
+  </div>;
 }
 
 function inline(text, depth = 0) {
@@ -51,7 +77,7 @@ export default memo(function MessageContent({ text }) {
       index++;
       while (index < lines.length && !closingFence.test(lines[index])) codeLines.push(lines[index++]);
       if (index < lines.length) index++;
-      blocks.push(<div key={key} className="messageCode">{code[2].trim() && <span>{code[2].trim()}</span>}<pre><code>{codeLines.join("\n")}</code></pre></div>);
+      blocks.push(<CodeBlock key={key} info={code[2]} code={codeLines.join("\n")} />);
       continue;
     }
     const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+)$/);

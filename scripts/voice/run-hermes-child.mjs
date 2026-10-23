@@ -4,7 +4,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { claimHermesProcessGroup, getAssistantRun, recordHermesCliPid, requestFileForRun } from "../../lib/assistant-runs.js";
-import { processAlive } from "../../lib/work-store.js";
+import { processMatchesIdentity } from "../../lib/work-store.js";
 
 const id = process.argv[2];
 const specFile = `${requestFileForRun(id)}.child.json`;
@@ -30,11 +30,11 @@ try {
   fs.unlinkSync(specFile);
   if (typeof spec.command !== "string" || !Array.isArray(spec.args) || !spec.args.every(value => typeof value === "string")) throw new Error("Invalid child execution specification.");
   const current = getAssistantRun(id);
-  if (stopping || !processAlive(run.pid) || current?.executionCancelRequestedAt || current?.executionStopRequestedAt) process.exit(0);
+  if (stopping || !processMatchesIdentity(run.pid, run.pidIdentity) || current?.executionCancelRequestedAt || current?.executionStopRequestedAt) process.exit(0);
   child = spawn(spec.command, spec.args, { cwd: process.cwd(), env: process.env, stdio: ["ignore", "inherit", "inherit"], detached: false });
   child.once("spawn", () => { try { recordHermesCliPid(id, child.pid); } catch { stop(); } });
   const monitor = setInterval(() => {
-    if (processAlive(run.pid)) return;
+    if (processMatchesIdentity(run.pid, run.pidIdentity)) return;
     // Reconciliation persists the interruption and signals this saved group.
     // The gate also keeps its own escalation alive without a browser poll.
     try { getAssistantRun(id); } catch {}

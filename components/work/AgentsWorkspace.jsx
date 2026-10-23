@@ -6,7 +6,10 @@ import { Archive, Check, ChevronDown, Clock3, Coins, MessageCircle, Plus, Rotate
 import MissionOrb from "@/components/MissionOrb.jsx";
 import { workAgentPresence } from "@/lib/work-agent-selection.js";
 import AgentProfileDialog from "./AgentProfileDialog.jsx";
+import { delegatedAgentStatus, formatDelegatedProgress, savedAgentStatus } from "./agentStatus.js";
+import OutcomeReview from "./OutcomeReview.jsx";
 import { useWorkSessions } from "./WorkSessionProvider.jsx";
+import { outcomeFromLegacyResult } from "@/lib/run-outcome.js";
 import styles from "./AgentsWorkspace.module.css";
 
 function finite(value) {
@@ -101,14 +104,17 @@ function AgentCard({ agent, expanded, archived, current, selected, session, pend
   const running = Boolean(agent.activeRun);
   const run = agent.activeRun || agent.lastRun;
   const presence = workAgentPresence(agent);
+  const runStatus = savedAgentStatus(agent);
   const stats = agentStats(agent);
   const detailsId = `agent-details-${agent.id}`;
   const model = agent.model ? `${agent.provider || "Provider"} · ${agent.model}` : "Workspace default";
   const folder = agent.workingDirectory?.split("/").filter(Boolean).at(-1) || "Managed workspace";
+  const capabilities = agent.capabilityPolicy ? `${agent.capabilityPolicy.tools.ids.length} tools · ${agent.capabilityPolicy.skills.ids.length} skills` : "Legacy inherited access";
+  const outcome = !running && run ? run.outcome || outcomeFromLegacyResult({ state: run.state, response: agent.lastResult, error: ["error", "interrupted"].includes(run.state) ? run.statusLabel : "", updatedAt: run.updatedAt }) : null;
   return <article className={styles.card} aria-labelledby={`agent-name-${agent.id}`} data-expanded={expanded || undefined} data-running={running || undefined}>
     <button type="button" className={styles.summary} aria-expanded={expanded} aria-controls={detailsId} aria-label={`${expanded ? "Hide" : "Show"} details for ${agent.name}`} onClick={onToggle}>
       <span className={styles.avatar}><MissionOrb size="inline" avatar="bloub" agentName={agent.name} voiceState="idle" activity={{ state: presence.state, label: presence.label, isStale: false }} color={agent.color || "sage"} pointerFollowing={false} preserveBloubBody /></span>
-      <span className={styles.identity}><span className={styles.nameRow}><h2 id={`agent-name-${agent.id}`}>{agent.name}</h2>{current && <span>Current conversation</span>}</span><span className={styles.presence} data-state={presence.state}><i aria-hidden="true" />{presence.label}</span></span>
+      <span className={styles.identity}><span className={styles.nameRow}><h2 id={`agent-name-${agent.id}`}>{agent.name}</h2>{current && <span>Current conversation</span>}</span><span className={styles.presence} data-state={runStatus.state}><i aria-hidden="true" /><strong>{runStatus.label}</strong>{runStatus.detail && <span> · {runStatus.detail}</span>}</span></span>
       <ChevronDown size={18} aria-hidden="true" />
     </button>
     <p className={styles.description}>{agent.description}</p>
@@ -121,11 +127,14 @@ function AgentCard({ agent, expanded, archived, current, selected, session, pend
       <dl className={styles.facts}>
         <div><dt>Model</dt><dd>{model}</dd></div>
         <div><dt>Workspace</dt><dd title={agent.workingDirectory}>{folder}</dd></div>
+        <div><dt>Capabilities</dt><dd>{capabilities}</dd></div>
         <div><dt>Runs</dt><dd>{stats.runs.total == null ? "Not reported" : `${stats.runs.total} total${stats.runs.completed == null ? "" : ` · ${stats.runs.completed} complete`}`}</dd></div>
       </dl>
+      {agent.capabilityPolicyError && <p className="workError" role="alert">{agent.capabilityPolicyError}</p>}
       <p className={styles.telemetryNote}>Runtime and tokens appear only when reported. Cost estimates cover Hermes turn usage, exclude auxiliary calls and retries, and may differ from your provider bill.</p>
-      {agent.lastResult && !running && <details className={styles.result}><summary>Latest result</summary><p>{agent.lastResult}</p></details>}
-      {!archived && !running && <AgentTask agent={agent} disabled={Boolean(pending)} onRun={(text, actionId) => onAct("run", () => onOpen.run(text, actionId))} />}
+      {runStatus.task && <div className={styles.currentTask} data-state={runStatus.state}><span>Current task</span><p>{runStatus.task}</p></div>}
+      {outcome && <OutcomeReview outcome={outcome} compact onOpenSession={() => onAct("conversation", onOpen.conversation)} />}
+      {!archived && !running && <AgentTask agent={agent} disabled={Boolean(pending) || Boolean(agent.capabilityPolicyError)} onRun={(text, actionId) => onAct("run", () => onOpen.run(text, actionId))} />}
     </section>}
     <footer className={styles.actions}>
       {!archived && <button type="button" className={styles.secondary} aria-pressed={selected} onClick={onPresence}>{selected ? <Check size={14} aria-hidden="true" /> : <Plus size={14} aria-hidden="true" />}{selected ? "In Talk" : "Add to Talk"}</button>}
@@ -150,7 +159,7 @@ export default function AgentsWorkspace() {
   const profiles = (work?.agents || []).filter(agent => Boolean(agent.archivedAt) === archived);
   const activeProfiles = (work?.agents || []).filter(agent => !agent.archivedAt);
   const delegations = work?.delegations || [];
-  const activeCount = activeProfiles.filter(agent => agent.activeRun).length + delegations.filter(agent => ["queued", "running"].includes(agent.status)).length;
+  const activeCount = activeProfiles.filter(agent => savedAgentStatus(agent).active).length + delegations.filter(agent => delegatedAgentStatus(agent).active).length;
   const completedRuns = activeProfiles.reduce((total, agent) => total + (agentStats(agent).runs.completed || 0), 0);
   const hasRunTotals = activeProfiles.some(agent => agentStats(agent).runs.completed != null);
 
@@ -177,14 +186,14 @@ export default function AgentsWorkspace() {
     router.push("/chat");
   }
 
-  return <main className={styles.page}>
+  return <section className={styles.page} aria-labelledby="agents-page-title">
     <header className={styles.hero}>
-      <div><span className="workEyebrow">PERSISTENT TEAMMATES</span><h1>Agents</h1><p>Give repeat work a clear owner. Each agent keeps its own instructions, workspace, model, and conversation.</p></div>
-      <button type="button" className="workButton" onClick={event => { event.currentTarget.focus(); setEditor("new"); }}><Plus size={17} aria-hidden="true" />New agent</button>
+      <div><span className="workEyebrow">SAVED TEAMMATES</span><h1 id="agents-page-title">Agents</h1><p>Create specialists for repeat work. Each saved teammate keeps its role, workspace, model choice, and conversation.</p></div>
+      <button type="button" className="workButton" onClick={event => { event.currentTarget.focus(); setEditor("new"); }}><Plus size={17} aria-hidden="true" />New teammate</button>
     </header>
 
     <section className={styles.overview} aria-label="Agent overview">
-      <div><UsersRound size={17} aria-hidden="true" /><span>Available agents</span><strong>{activeProfiles.length}</strong></div>
+      <div><UsersRound size={17} aria-hidden="true" /><span>Saved teammates</span><strong>{activeProfiles.length}</strong></div>
       <div><span className={styles.liveDot} aria-hidden="true" /><span>Working now</span><strong>{activeCount}</strong></div>
       <div><Check size={17} aria-hidden="true" /><span>Completed runs</span><strong>{hasRunTotals ? completedRuns : "—"}</strong><small>{hasRunTotals ? "Reported history" : "Not reported"}</small></div>
     </section>
@@ -200,7 +209,7 @@ export default function AgentsWorkspace() {
     {(error || work?.agentsError) && <p className="workError" role="alert">{error || work.agentsError}</p>}
     {!profiles.length ? <section className={styles.empty}>
       <span className={styles.emptyAvatar}><MissionOrb size="inline" avatar="bloub" agentName="New agent" voiceState="idle" color="sage" pointerFollowing={false} preserveBloubBody /></span>
-      <h2>{archived ? "No archived agents" : "Create your first specialist"}</h2>
+      <h2>{archived ? "No archived teammates" : "Create your first specialist"}</h2>
       <p>{archived ? "Archived profiles stay here until you restore them." : "Start with a role you repeat: research, implementation, review, or another focused responsibility."}</p>
     </section> : <section className={styles.grid} aria-label={archived ? "Archived agents" : "Active agents"}>{profiles.map(agent => {
       const session = (work?.sessions || []).find(item => item.id === agent.sessionId);
@@ -215,18 +224,21 @@ export default function AgentsWorkspace() {
       }} />;
     })}</section>}
     {!archived && Boolean(delegations.length) && <section className={styles.delegated} aria-labelledby="delegated-work-title">
-      <div className={styles.sectionHeading}><div><span className="workEyebrow">LIVE WORK</span><h2 id="delegated-work-title">Delegated work</h2></div><p>Short-lived helpers started inside a parent conversation.</p></div>
+      <div className={styles.sectionHeading}><div><span className="workEyebrow">TEMPORARY WORKERS</span><h2 id="delegated-work-title">Delegated work</h2></div><p>Created for one subtask inside a parent conversation. They are not saved teammates.</p></div>
       <div className={styles.delegatedGrid}>{delegations.map(agent => {
-        const active = ["queued", "running"].includes(agent.status);
-        return <article key={`${agent.runId}:${agent.id}`} className={styles.delegatedCard} aria-label={agent.name}>
-          <div><span className={styles.liveDot} aria-hidden="true" data-active={active || undefined} /><div><h3>{agent.name}</h3><p>{agent.statusLabel}</p></div></div>
+        const status = delegatedAgentStatus(agent);
+        const progress = formatDelegatedProgress(agent);
+        const outcome = !status.active ? outcomeFromLegacyResult({ state: agent.status, response: agent.status === "complete" ? agent.result : "", error: agent.status === "complete" ? "" : agent.result || agent.statusLabel, updatedAt: agent.updatedAt }) : null;
+        return <article key={`${agent.runId}:${agent.instanceId || agent.id}`} className={styles.delegatedCard} aria-label={`Temporary worker: ${agent.task || "subtask"}`} data-state={status.state}>
+          <div><span className={styles.liveDot} aria-hidden="true" data-active={status.active || undefined} /><div><h3>Temporary worker</h3><p role={status.active ? "status" : undefined}><strong>{status.label}</strong>{status.detail && <span> · {status.detail}</span>}</p></div></div>
           <p className={styles.delegatedTask}>{agent.task}</p>
-          {agent.result && <details className={styles.result}><summary>Result</summary><p>{agent.result}</p></details>}
-          <footer><button type="button" className={styles.secondary} disabled={Boolean(pending) || work?.busy} onClick={() => act(`${agent.id}:parent`, async () => { await work.selectSession(agent.sessionId); router.push("/chat"); })}><MessageCircle size={14} aria-hidden="true" />Parent conversation</button>{agent.canStop && <button type="button" className={styles.danger} disabled={Boolean(pending)} onClick={() => act(`${agent.id}:stop`, () => work.stopDelegation(agent))}><Square size={12} aria-hidden="true" />Stop</button>}</footer>
+          {progress && <p className={styles.delegatedProgress}>{progress}</p>}
+          {outcome && <OutcomeReview outcome={outcome} compact onOpenSession={() => act(`${agent.instanceId || agent.id}:review`, async () => { await work.selectSession(agent.sessionId); router.push("/chat"); })} />}
+          <footer><button type="button" className={styles.secondary} disabled={Boolean(pending) || work?.busy} onClick={() => act(`${agent.instanceId || agent.id}:parent`, async () => { await work.selectSession(agent.sessionId); router.push("/chat"); })}><MessageCircle size={14} aria-hidden="true" />Parent conversation</button>{(agent.canStop || status.state === "stopping") && <button type="button" className={styles.danger} disabled={Boolean(pending) || status.state === "stopping"} onClick={() => act(`${agent.instanceId || agent.id}:stop`, () => work.stopDelegation(agent))}><Square size={12} aria-hidden="true" />{status.state === "stopping" ? "Stopping…" : "Stop"}</button>}</footer>
         </article>;
       })}</div>
     </section>}
-    <p className={styles.footnote}>Up to four conversations can work at once. Accepted work continues when you switch views.</p>
+    <p className={styles.footnote}>Saved teammates and temporary workers run in conversations. Recurring and future work stays separate in <a href="/tasks">Tasks</a>. Accepted work continues when you switch views.</p>
     {editor && <AgentProfileDialog agent={editor === "new" ? null : editor} onClose={() => setEditor(null)} />}
-  </main>;
+  </section>;
 }

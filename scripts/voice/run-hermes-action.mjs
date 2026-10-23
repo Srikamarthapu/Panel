@@ -5,24 +5,21 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { addVoiceActivity } from "../../lib/voiceActivity.js";
-import { beginAssistantRun, finishAssistantExecution, getAssistantRun, getConversationSession, recordJevDecision, requestFileForRun, saveConversationSession, updateAssistantRun } from "../../lib/assistant-runs.js";
+import { beginAssistantRun, finalizeAssistantRun, finishAssistantExecution, getAssistantRun, getConversationSession, recordAssistantRunToolEvent, recordJevDecision, requestFileForRun, saveConversationSession, updateAssistantRun } from "../../lib/assistant-runs.js";
 import { friendlyRunError, readHermesResult, readHermesTurnResult } from "../../lib/hermes-run-protocol.js";
 import { labelForToolCall } from "../../lib/hermesToolLabels.js";
 import { routeControlModel } from "./jev-control-route.mjs";
 import { recordSessionRun, validateWorkingDirectory } from "../../lib/work-sessions.js";
 import { dataDirectory } from "../../lib/work-store.js";
 import { buildControlSystemInstructions, turnInstructionsForTextOnly } from "../../lib/voiceTurnInstructions.js";
+import { assistantRunTimeoutMs } from "../../lib/assistant-timeout.js";
 
 const actionId = process.argv[2];
 const childGate = fileURLToPath(new URL("./run-hermes-child.mjs", import.meta.url));
 const TURN_REPORT_ENV = "HERMES_QUIET_TURN_REPORT_FILE";
 const TURN_REPORT_MAX_BYTES = 2_000_000;
 const TURN_REPORT_GRACE_MS = 2_000;
-const DEFAULT_RUN_TIMEOUT_MS = 12 * 60_000;
-const configuredTimeoutMs = Number(process.env.HERMES_VOICE_RUN_TIMEOUT_MS);
-const RUN_TIMEOUT_MS = Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
-  ? Math.min(DEFAULT_RUN_TIMEOUT_MS, Math.max(250, configuredTimeoutMs))
-  : DEFAULT_RUN_TIMEOUT_MS;
+const RUN_TIMEOUT_MS = assistantRunTimeoutMs(process.env.HERMES_VOICE_RUN_TIMEOUT_MS);
 
 function resultSignature(result) {
   return JSON.stringify([result?.state || "", result?.response || "", result?.error || ""]);
@@ -61,8 +58,8 @@ function activity(input) {
 }
 function finish(result) {
   if (finalized) return;
+  const run = finalizeAssistantRun(actionId, result);
   finalized = true;
-  const run = updateAssistantRun(actionId, result);
   if (!run || run.state === "cancelled") return;
   activity({ id: `${actionId}:${run.state === "complete" ? "complete" : "failed"}`, kind: run.state === "complete" ? "tool" : "error", state: run.state, title: run.state === "complete" ? "Hermes answered" : "Request needs attention", summary: run.response || run.error, target: "hermes" });
 }
@@ -246,6 +243,7 @@ async function main() {
           return;
         }
         const start = event.type === "tool_use";
+        recordAssistantRunToolEvent(actionId, event);
         const label = labelForToolCall(event.name, event.input);
         const title = start ? label.title : event.is_error ? "A tool needs attention" : "Tool finished";
         updateAssistantRun(actionId, { statusLabel: start ? title : "Thinking through the result…" });

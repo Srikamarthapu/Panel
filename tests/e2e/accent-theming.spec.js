@@ -21,24 +21,33 @@ const palettes = [
 ];
 
 for (const palette of palettes) {
-  test(`${palette.name} colors the rendered workspace and preserves readable status indicators`, async ({ page }) => {
+  test(`${palette.name} keeps surfaces neutral and colors the selected indicator`, async ({ page }) => {
     test.setTimeout(60_000);
     await appearanceFixture(page);
     await page.goto("/settings");
     await page.getByRole("button", { name: palette.name, exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("data-panel-accent", palette.key);
     // Read actual rendered RGB, including the browser's relative-color conversion.
-    const rgba = await page.locator(".controlNav__link.is-current svg").evaluate(node => {
+    const sample = await page.locator(".controlNav__link.is-current").evaluate(node => {
       const context = document.createElement("canvas").getContext("2d");
-      context.fillStyle = getComputedStyle(node).color;
-      context.fillRect(0, 0, 1, 1);
-      return [...context.getImageData(0, 0, 1, 1).data];
+      const pixels = color => {
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+        return [...context.getImageData(0, 0, 1, 1).data];
+      };
+      return {
+        selected: pixels(getComputedStyle(node).backgroundColor),
+        text: pixels(getComputedStyle(node).color),
+        indicator: pixels(getComputedStyle(node, "::before").backgroundColor),
+      };
     });
-    expect(rgba[3]).toBe(255);
-    expect(rgba[palette.dominant]).toBeGreaterThan(Math.min(...rgba.slice(0, 3)) + 10);
-    expect(rgba[palette.dominant]).toBe(Math.max(...rgba.slice(0, 3)));
-    if (palette.key === "lilac") expect(rgba[0]).toBeGreaterThan(rgba[1]);
-    if (palette.key === "blue") expect(rgba[1]).toBeGreaterThan(rgba[0]);
+    for (const neutral of [sample.selected, sample.text]) expect(Math.max(...neutral.slice(0, 3)) - Math.min(...neutral.slice(0, 3))).toBeLessThanOrEqual(1);
+    expect(sample.indicator[3]).toBe(255);
+    expect(sample.indicator[palette.dominant]).toBeGreaterThan(Math.min(...sample.indicator.slice(0, 3)) + 10);
+    expect(sample.indicator[palette.dominant]).toBe(Math.max(...sample.indicator.slice(0, 3)));
+    if (palette.key === "lilac") expect(sample.indicator[0]).toBeGreaterThan(sample.indicator[1]);
+    if (palette.key === "blue") expect(sample.indicator[1]).toBeGreaterThan(sample.indicator[0]);
 
     for (const route of ["/settings", "/", "/chat", "/sessions", "/tasks", "/memory", "/models", "/tools", "/voice"]) {
       await page.goto(route);

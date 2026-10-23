@@ -2,6 +2,22 @@ const VAD_ASSET_PATH = "/voice-vad/";
 const ORT_ASSET_PATH = `${VAD_ASSET_PATH}onnx/`;
 let vadModulePromise;
 
+// Keep enough context for softly spoken openings and ordinary thinking pauses.
+// The thresholds, pre-roll, and redemption window match the v5 detector's
+// quality-oriented defaults. We intentionally retain the shorter minimum
+// speech window so brief confirmations such as "yes" are still submitted.
+// The previous latency-tuned values raised the onset threshold while
+// shortening pre-roll and redemption, so the browser could discard the
+// beginning of a quiet phrase or split one utterance at a natural pause before
+// STT received it.
+export const CONTINUOUS_VAD_OPTIONS = Object.freeze({
+  positiveSpeechThreshold: 0.3,
+  negativeSpeechThreshold: 0.25,
+  preSpeechPadMs: 800,
+  redemptionMs: 1400,
+  minSpeechMs: 256,
+});
+
 // Start the local JS download alongside microphone permission. This does not
 // request a microphone, initialize inference, or contact a speech provider.
 export function preloadContinuousSpeechDetector() {
@@ -82,11 +98,7 @@ export async function createContinuousSpeechDetector({
       ort.env.wasm.numThreads = 1;
       ort.env.wasm.proxy = false;
     },
-    positiveSpeechThreshold: 0.5,
-    negativeSpeechThreshold: 0.35,
-    preSpeechPadMs: 640,
-    redemptionMs: 800,
-    minSpeechMs: 256,
+    ...CONTINUOUS_VAD_OPTIONS,
     submitUserSpeechOnPause: false,
     onFrameProcessed,
     onSpeechRealStart,

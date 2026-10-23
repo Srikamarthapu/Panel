@@ -7,11 +7,11 @@ offers a parent-scoped stop helper for the ACP extension method.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import re
 import threading
-import time
 import unicodedata
 from collections import OrderedDict
 from datetime import datetime, timezone
@@ -25,6 +25,8 @@ STOP_AGENT_METHOD = "panel/stop_agent"
 
 _RUN_HISTORY_LIMIT = 96
 _RUN_AGENT_LIMIT = 128
+_PENDING_TERMINAL_LIMIT = _RUN_HISTORY_LIMIT * _RUN_AGENT_LIMIT
+_TERMINAL_NOTIFICATION_TIMEOUT_SECONDS = 2.0
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
 _ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
@@ -202,7 +204,7 @@ def _public_agent_update(event_type: Any, preview: Any, kwargs: dict[str, Any]) 
     return agent_id, agent
 
 
-def _can_stop_subagent(agent: Any, subagent_id: str) -> bool:
+def _can_stop_subagent(agent: Any, subagent_id: str, delegation_id: Any = None) -> bool:
     """Expose stop only when Hermes confirms a live child owned by this parent."""
     api = _delegation_control_api()
     if api is None:
@@ -211,7 +213,10 @@ def _can_stop_subagent(agent: Any, subagent_id: str) -> bool:
     try:
         with active_lock:
             record = active_subagents.get(subagent_id)
-            return bool(record is not None and owns_record(record, agent))
+            if record is None or not owns_record(record, agent):
+                return False
+            native_generation = record.get("delegation_id")
+            return bool(delegation_id) == bool(native_generation) and delegation_id == native_generation
     except Exception:
         logger.debug("Could not verify delegated-agent stop ownership", exc_info=True)
         return False
@@ -246,16 +251,21 @@ def wrap_tool_progress_callback(
                     previous = _run_agents.get(scope, {}).get(agent_id)
                 if previous:
                     # Preserve first start time, accumulated safe task text, and
-                    # a locally acknowledged stop request across progress ticks.
+                    # stable native identity across sparse progress ticks.
                     if previous.get("startedAt") and "startedAt" not in state:
                         state["startedAt"] = previous["startedAt"]
                     if not state.get("task") and previous.get("task"):
                         state["task"] = previous["task"]
                     if state.get("name") in {"Delegated agent"} and previous.get("name"):
                         state["name"] = previous["name"]
+                    for identity_key in ("parentId", "childSessionId", "delegationId"):
+                        if previous.get(identity_key) and identity_key not in state:
+                            state[identity_key] = previous[identity_key]
                     if previous.get("stopRequested"):
                         state["stopRequested"] = True
-                state["canStop"] = state.get("status") == "running" and _can_stop_subagent(agent, agent_id)
+                state["canStop"] = state.get("status") == "running" and _can_stop_subagent(
+                    agent, agent_id, state.get("delegationId"),
+                )
                 if _remember(scope, agent_id, state):
                     notify(AGENT_UPDATE_METHOD, {
                         "sessionId": session_id,
@@ -273,11 +283,105 @@ def wrap_tool_progress_callback(
 def make_acp_notifier(conn: Any, loop: Any) -> Callable[[str, dict[str, Any]], bool] | None:
     """Create a thread-safe sender for the private ACP `panel/agent_update` extension."""
     ext_notification = getattr(conn, "ext_notification", None)
-    if not callable(ext_notification) or loop is None:
+    ext_method = getattr(conn, "ext_method", None)
+    if (not callable(ext_notification) and not callable(ext_method)) or loop is None:
         return None
+    cached = getattr(conn, "_panel_agent_notifier", None)
+    if callable(cached):
+        resume = getattr(cached, "_panel_resume_pending", None)
+        if callable(resume):
+            resume()
+        return cached
+
+    pending_lock = threading.Lock()
+    pending: OrderedDict[tuple[str, str, str, str], dict[str, Any]] = OrderedDict()
+    drain_scheduled = False
+
+    def terminal_key(params: dict[str, Any]) -> tuple[str, str, str, str]:
+        agent = params.get("agent", {})
+        return (
+            str(params.get("sessionId") or ""),
+            str(params.get("runId") or ""),
+            str(agent.get("id") or ""),
+            str(agent.get("delegationId") or ""),
+        )
+
+    async def drain_pending() -> None:
+        nonlocal drain_scheduled
+        delays = (0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0)
+        try:
+            while True:
+                with pending_lock:
+                    if not pending:
+                        return
+                    key, item = next(iter(pending.items()))
+                try:
+                    if not callable(ext_method):
+                        raise RuntimeError("ACP terminal update requests are unavailable")
+                    result = await asyncio.wait_for(
+                        ext_method(item["method"], item["params"]),
+                        timeout=_TERMINAL_NOTIFICATION_TIMEOUT_SECONDS,
+                    )
+                    if not isinstance(result, dict) or result.get("ok") is not True:
+                        raise RuntimeError("Control panel did not durably accept the terminal agent update")
+                except Exception:
+                    logger.debug("Could not send terminal Control panel agent notification", exc_info=True)
+                    with pending_lock:
+                        current = pending.get(key)
+                        if current is item:
+                            item["failures"] += 1
+                            pending.move_to_end(key)
+                            delay = delays[min(item["failures"] - 1, len(delays) - 1)]
+                        else:
+                            delay = delays[0]
+                    await asyncio.sleep(delay)
+                    continue
+                with pending_lock:
+                    if pending.get(key) is item:
+                        pending.pop(key, None)
+        finally:
+            with pending_lock:
+                drain_scheduled = False
+                restart = bool(pending)
+            if restart:
+                schedule_drain()
+
+    def schedule_drain() -> bool:
+        nonlocal drain_scheduled
+        with pending_lock:
+            if drain_scheduled:
+                return True
+            drain_scheduled = True
+        task = drain_pending()
+        try:
+            from agent.async_utils import safe_schedule_threadsafe
+
+            future = safe_schedule_threadsafe(
+                task, loop, logger=logger,
+                log_message="Failed to schedule Control panel terminal notification delivery",
+            )
+            if future is not None:
+                return True
+        except Exception:
+            logger.debug("Could not schedule terminal Control panel agent notification", exc_info=True)
+        task.close()
+        with pending_lock:
+            drain_scheduled = False
+        return False
 
     def notify(method: str, params: dict[str, Any]) -> bool:
+        terminal = params.get("agent", {}).get("status") in {"complete", "error", "cancelled"}
+        if terminal:
+            key = terminal_key(params)
+            with pending_lock:
+                pending[key] = {"method": method, "params": params, "failures": 0}
+                pending.move_to_end(key)
+                while len(pending) > _PENDING_TERMINAL_LIMIT:
+                    pending.popitem(last=False)
+            return schedule_drain()
         try:
+            if not callable(ext_notification):
+                return False
             from agent.async_utils import safe_schedule_threadsafe
 
             future = safe_schedule_threadsafe(
@@ -292,12 +396,18 @@ def make_acp_notifier(conn: Any, loop: Any) -> Callable[[str, dict[str, Any]], b
             logger.debug("Could not send Control panel extension notification", exc_info=True)
             return False
 
+    try:
+        setattr(notify, "_panel_resume_pending", schedule_drain)
+        setattr(conn, "_panel_agent_notifier", notify)
+    except Exception:
+        pass
     return notify
 
 
 def _delegation_control_api():
     """Return the installed runtime's exact live-child control primitives, or None if unavailable."""
     try:
+        from agent.interrupt_compat import request_hard_interrupt
         from tools import delegate_tool_registry as registry
     except Exception:
         return None
@@ -305,44 +415,61 @@ def _delegation_control_api():
         getattr(registry, "_active_subagents", None),
         getattr(registry, "_active_subagents_lock", None),
         getattr(registry, "_owns_subagent_record", None),
-        getattr(registry, "interrupt_subagent", None),
+        request_hard_interrupt,
     )
     if required[0] is None or required[1] is None or not all(callable(item) for item in required[2:]):
         return None
     return required
 
 
-def stop_subagent(agent: Any, subagent_id: Any, *, session_id: str, run_id: str) -> dict[str, Any]:
+def stop_subagent(
+    agent: Any, subagent_id: Any, *, session_id: str, run_id: str,
+    delegation_id: Any = None,
+) -> dict[str, Any]:
     """Request a cooperative stop for one live child owned by the specified parent run.
 
     Queued children are not registered in Hermes' live-child registry yet and
     cannot be stopped individually through its native control API. Parent-run
     cancellation remains the separate way to stop every child in that run.
     """
-    if not _valid_id(subagent_id) or not _valid_id(run_id) or not _valid_session_id(session_id):
+    if (not _valid_id(subagent_id) or not _valid_id(run_id) or not _valid_session_id(session_id)
+            or (delegation_id is not None and not _valid_id(delegation_id))):
         return {"ok": False, "error": "invalid_request"}
     if not agent or str(getattr(agent, "session_id", "") or "") != session_id:
         return {"ok": False, "error": "parent_session_mismatch"}
 
     scope = (session_id, run_id)
     with _run_agents_lock:
-        state = dict(_run_agents.get(scope, {}).get(subagent_id) or {})
+        state_ref = _run_agents.get(scope, {}).get(subagent_id)
+        state = dict(state_ref or {})
     if not state:
         return {"ok": False, "error": "agent_not_in_run"}
+    if delegation_id is not None and state.get("delegationId") != delegation_id:
+        return {"ok": False, "error": "agent_generation_mismatch"}
     if state.get("status") != "running":
         return {"ok": False, "error": "agent_not_running", "status": state.get("status")}
     api = _delegation_control_api()
     if api is None:
         return {"ok": False, "error": "delegation_control_unavailable"}
-    active_subagents, active_lock, owns_record, interrupt = api
+    active_subagents, active_lock, owns_record, interrupt_agent = api
     try:
         with active_lock:
             record = active_subagents.get(subagent_id)
             if record is None or not owns_record(record, agent):
                 return {"ok": False, "error": "agent_not_active"}
+            native_agent = record.get("agent")
+            expected_generation = state.get("delegationId")
+            if native_agent is None:
+                return {"ok": False, "error": "agent_not_active"}
+            native_generation = record.get("delegation_id")
+            if bool(expected_generation) != bool(native_generation) or expected_generation != native_generation:
+                return {"ok": False, "error": "agent_generation_mismatch"}
         if state.get("stopRequested"):
             return {"ok": True, "status": "interrupt_requested", "agentId": subagent_id, "duplicate": True}
-        if not interrupt(subagent_id):
+        # Interrupt the exact child object captured above. Re-looking it up by
+        # public ID here could target a replacement registered after the lock
+        # was released.
+        if not interrupt_agent(native_agent, f"Interrupted via Panel ({subagent_id})"):
             return {"ok": False, "error": "agent_not_active"}
     except Exception:
         logger.debug("Could not stop delegated agent", exc_info=True)
@@ -350,7 +477,11 @@ def stop_subagent(agent: Any, subagent_id: Any, *, session_id: str, run_id: str)
 
     with _run_agents_lock:
         current = _run_agents.get(scope, {}).get(subagent_id)
-        if current and current.get("status") == "running":
+        expected_generation = state.get("delegationId")
+        same_generation = bool(current) and (
+            current.get("delegationId") == expected_generation if expected_generation else current is state_ref
+        )
+        if same_generation and current.get("status") == "running":
             current["stopRequested"] = True
             current["updatedAt"] = _timestamp()
     return {"ok": True, "status": "interrupt_requested", "agentId": subagent_id}
@@ -365,6 +496,7 @@ def handle_panel_method(agent: Any, method: str, params: Any) -> dict[str, Any] 
         params.get("agentId"),
         session_id=params.get("sessionId", ""),
         run_id=params.get("runId", ""),
+        delegation_id=params.get("delegationId"),
     )
 
 

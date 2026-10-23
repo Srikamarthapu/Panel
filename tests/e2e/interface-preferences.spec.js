@@ -57,7 +57,7 @@ test("system motion updates live, an explicit choice overrides it, and reset res
   await expect(page.getByRole("switch", { name: "Follow cursor" })).toHaveAttribute("aria-checked", "true");
   await expect(page.getByRole("switch", { name: "Companion glow" })).toHaveAttribute("aria-checked", "true");
   await expect(page.getByRole("switch", { name: "Companion float" })).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByRole("status")).toContainText("Appearance restored to the defaults.");
+  await expect(page.getByRole("status").filter({ hasText: "Appearance restored to the defaults." })).toBeVisible();
 });
 
 test("two windows share appearance changes while merging independent edits", async ({ page, context }) => {

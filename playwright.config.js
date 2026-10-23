@@ -3,6 +3,11 @@
 // Used by `npm run test:e2e` and `npm run test:smoke`.
 import { defineConfig } from "playwright/test";
 
+const externalUrl = String(process.env.PANEL_TEST_URL || "").trim();
+const localPort = Number(process.env.PANEL_TEST_PORT || 3012);
+if (!Number.isInteger(localPort) || localPort < 1024 || localPort > 65535) throw new Error("PANEL_TEST_PORT must be a valid unprivileged port.");
+const localUrl = `http://127.0.0.1:${localPort}`;
+
 export default defineConfig({
   testDir: "./tests",
   testMatch: ["**/e2e/**/*.spec.js", "**/smoke/**/*.spec.js"],
@@ -11,14 +16,15 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "list" : "list",
   use: {
-    baseURL: process.env.PANEL_TEST_URL || "http://127.0.0.1:3012",
+    baseURL: externalUrl || localUrl,
     trace: "retain-on-failure",
     video: "off",
   },
-  webServer: {
-    command: "HERMES_NEXT_DIST_DIR=.next-test next dev -H 127.0.0.1 -p 3012",
-    url: process.env.PANEL_TEST_URL || "http://127.0.0.1:3012",
-    reuseExistingServer: true,
-    timeout: 120_000,
+  webServer: externalUrl ? undefined : {
+    command: "node scripts/test-browser-server.mjs",
+    url: localUrl,
+    reuseExistingServer: false,
+    timeout: 240_000,
+    gracefulShutdown: { signal: "SIGTERM", timeout: 10_000 },
   },
 });

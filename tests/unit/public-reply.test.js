@@ -11,14 +11,15 @@ test("structured final selection excludes tool calls, tool results, reasoning an
   ];
   assert.equal(assistantFinalText(messages), "Your meeting starts at noon.");
   assert.equal(assistantFinalText({ role: "assistant", channel: "analysis", content: "Internal reasoning" }), "");
-  assert.equal(publicReplyText(JSON.stringify({ tool_calls: [{ name: "search" }], usage: { total_tokens: 123 } })), "");
+  assert.equal(assistantFinalText({ tool_calls: [{ name: "search" }], usage: { total_tokens: 123 } }), "");
+  assert.equal(assistantFinalText(JSON.parse('{"messages":[{"role":"tool","content":"private"},{"role":"assistant","content":"Public answer"}]}')), "Public answer");
 });
 
 test("raw internal blocks are removed without altering a final answer", () => {
   const raw = '<think>I should use a tool.</think><tool_call>{"name":"search","arguments":{"q":"calendar"}}</tool_call>Your meeting starts at noon.';
   assert.equal(publicReplyText(raw), "Your meeting starts at noon.");
   assert.equal(publicReplyText('<function=search><parameter=q>private</parameter></function>Done.'), "Done.");
-  assert.equal(publicReplyText('Usage: prompt_tokens=123 completion_tokens=45\nAll done.'), "All done.");
+  assert.equal(publicReplyText('[usage] prompt_tokens=123 completion_tokens=45\nAll done.'), "All done.");
 });
 
 test("normal code, HTML examples, tool explanations and JSON data remain visible", () => {
@@ -38,7 +39,7 @@ test("stream guard never emits protocol even when delimiters arrive character by
     '<｜tool▁calls▁begin｜>search{}<｜tool▁calls▁end｜>Finished safely.',
     '[TOOL_CALLS]{"name":"search"}[/TOOL_CALLS]Finished safely.',
     '<|start|>assistant<|channel|>analysis<|message|>Private reasoning.<|end|><|start|>assistant<|channel|>final<|message|>Finished safely.',
-    'Usage: prompt_tokens=123\nFinished safely.',
+    '[usage] prompt_tokens=123\nFinished safely.',
   ];
   for (const raw of rawReplies) {
     async function* tokens() { yield* raw; }
@@ -46,6 +47,19 @@ test("stream guard never emits protocol even when delimiters arrive character by
     for await (const token of publicReplyTokens(tokens())) output += token;
     assert.equal(output, "Finished safely.", raw);
   }
+});
+
+test("answer strings preserve ordinary JSON fields and human usage instructions", async () => {
+  const answer = '{"role":"label","usage":"daily","output":"measured","messages":["Usage: 3 tablets per day"]}';
+  assert.equal(publicReplyText(answer), answer);
+  assert.equal(assistantFinalText({ role: "assistant", content: answer }), answer);
+  assert.equal(normalizeTranscriptEntries([{ role: "hermes", text: answer }])[0].text, answer);
+
+  async function* tokens() { yield answer.slice(0, 28); yield answer.slice(28); }
+  let streamed = "";
+  for await (const token of publicReplyTokens(tokens())) streamed += token;
+  assert.equal(streamed, answer);
+  assert.equal(publicReplyText("Usage: 3 tablets per day"), "Usage: 3 tablets per day");
 });
 
 test("an unfinished current turn never replays the previous assistant answer", () => {
@@ -62,6 +76,11 @@ test("history retains long messages and repairs old speech error attribution", (
   assert.equal(assistant.text.length, 12000);
   assert.equal(error.role, "hermes");
   assert.equal(error.isError, true);
+});
+
+test("trusted history preserves interrupted partial-response markers", () => {
+  const [partial] = normalizeTranscriptEntries([{ id: "partial", role: "hermes", text: "Useful partial answer.", partialResponse: true, interrupted: true }]);
+  assert.deepEqual(partial, { id: "partial", role: "hermes", text: "Useful partial answer.", time: "", partialResponse: true, interrupted: true });
 });
 
 test("ordinary text still streams immediately", async () => {

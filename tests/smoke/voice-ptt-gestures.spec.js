@@ -74,10 +74,10 @@ async function waitForRecordedAudio(page) {
 test("choosing a voice mode never opens the microphone", async ({ page }) => {
   const { dock, hold } = await setup(page);
   await expect(hold).toHaveText("Hold to talk");
-  const modes = dock.getByRole("group", { name: "Voice mode" });
-  await modes.getByRole("button", { name: "Hands-free", exact: true }).click();
-  await expect(dock.getByRole("button", { name: "Start conversation", exact: true })).toBeVisible();
-  await modes.getByRole("button", { name: "Push to talk", exact: true }).click();
+  const mode = page.locator(".talkWorkspace__mode");
+  await mode.click();
+  await expect(dock.getByRole("button", { name: /Start conversation with/ })).toBeVisible();
+  await page.keyboard.press("Shift+V");
   await expect(hold).toBeVisible();
   expect(await page.evaluate(() => window.__pttFixture.requests)).toBe(0);
 });
@@ -110,6 +110,20 @@ test("a short pointer press stays below the minimum and does not send", async ({
   expect(requests.chat).toBe(0);
 });
 
+test("keyboard events cannot release a pointer-owned hold", async ({ page }) => {
+  const { dock, hold, requests } = await setup(page);
+  await pointerDown(page, hold);
+  await expect(dock).toHaveAttribute("data-state", "capturing");
+  await page.keyboard.down("Space");
+  await page.keyboard.up("Space");
+  await expect(dock).toHaveAttribute("data-state", "capturing");
+  expect(requests.stt).toBe(0);
+  await hold.dispatchEvent("pointercancel", { pointerId: 1, button: 0, isPrimary: true });
+  await page.mouse.up();
+  await expect(dock).toHaveAttribute("data-state", "idle");
+  expect(requests.stt).toBe(0); expect(requests.chat).toBe(0);
+});
+
 for (const key of ["Space", "Enter"]) {
   test(`${key} hold and release follows the same recording path`, async ({ page }) => {
     const { dock, hold, requests } = await setup(page);
@@ -133,17 +147,63 @@ test("pointer cancellation and keyboard blur discard held audio", async ({ page 
   await expect(dock).toHaveAttribute("data-state", "idle");
   await hold.focus(); await page.keyboard.down("Space");
   await expect(dock).toHaveAttribute("data-state", "capturing");
-  await dock.getByRole("group", { name: "Voice mode" }).getByRole("button", { name: "Hands-free", exact: true }).focus();
+  await page.locator(".talkWorkspace__mode").focus();
   await page.keyboard.up("Space");
   await expect(dock).toHaveAttribute("data-state", "idle");
   expect(requests.stt).toBe(0); expect(requests.chat).toBe(0);
   expect(await page.evaluate(() => window.__pttFixture.live())).toBe(0);
 });
 
+test("a global Space hold is discarded when focus enters an editable control", async ({ page }) => {
+  const { dock, requests } = await setup(page);
+  await page.evaluate(() => { document.body.tabIndex = -1; document.body.focus(); });
+  await page.keyboard.down("Space");
+  await expect(dock).toHaveAttribute("data-state", "capturing");
+  await page.evaluate(() => {
+    const input = document.createElement("input");
+    input.setAttribute("aria-label", "Temporary editable target");
+    document.body.append(input);
+    input.focus();
+  });
+  await expect(dock).toHaveAttribute("data-state", "idle");
+  await page.keyboard.up("Space");
+  expect(requests.stt).toBe(0); expect(requests.chat).toBe(0);
+  expect(await page.evaluate(() => window.__pttFixture.live())).toBe(0);
+});
+
+test("switching mode cancels pending permission and rejects its late stream", async ({ page }) => {
+  const { dock, hold, requests } = await setup(page, { deferred: true });
+  await pointerDown(page, hold);
+  await expect(page.locator(".talkWorkspace__caption p")).toHaveText("Hermes is not listening until microphone access is ready.");
+  await page.keyboard.press("Shift+V");
+  await expect(dock).toHaveAttribute("data-mode", "conversation");
+  await expect(dock).toHaveAttribute("data-state", "idle");
+  await page.evaluate(() => window.__pttFixture.resolve(0));
+  await expect.poll(() => page.evaluate(() => window.__pttFixture.live())).toBe(0);
+  await page.mouse.up();
+  expect(requests.stt).toBe(0); expect(requests.chat).toBe(0);
+});
+
+test("switching Conversation to push to talk cancels pending permission without reopening the mic", async ({ page }) => {
+  const { dock, requests } = await setup(page, { deferred: true });
+  await page.locator(".talkWorkspace__mode").click();
+  await dock.getByRole("button", { name: /Start conversation with/ }).click();
+  await expect(page.locator(".talkWorkspace__caption p")).toHaveText("Hermes is not listening until microphone access is ready.");
+  expect(await page.evaluate(() => window.__pttFixture.requests)).toBe(1);
+  await page.keyboard.press("Shift+V");
+  await expect(dock).toHaveAttribute("data-mode", "ptt");
+  await expect(dock).toHaveAttribute("data-state", "idle");
+  await page.evaluate(() => window.__pttFixture.resolve(0));
+  await expect.poll(() => page.evaluate(() => window.__pttFixture.live())).toBe(0);
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => window.__pttFixture.requests)).toBe(1);
+  expect(requests.stt).toBe(0); expect(requests.chat).toBe(0);
+});
+
 test("releasing pending permission discards a late stream and permits a fresh hold", async ({ page }) => {
   const { dock, hold, requests } = await setup(page, { deferred: true });
   await pointerDown(page, hold);
-  await expect(dock.locator(".voiceDock__caption--polite")).toHaveText("Waiting for microphone permission");
+  await expect(page.locator(".talkWorkspace__caption p")).toHaveText("Hermes is not listening until microphone access is ready.");
   await page.mouse.up();
   await expect(dock).toHaveAttribute("data-state", "idle");
   await pointerDown(page, hold);

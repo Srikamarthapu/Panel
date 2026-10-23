@@ -17,15 +17,16 @@ function SideAgent({ agent, order, glow }) {
   </figure>;
 }
 
-function MainStatus({ presence }) {
+function MainStatus({ presence, instruction, instructionId, modelCaption }) {
   return <div className="talkWorkspace__caption" aria-live="polite">
     <span className="presenceStatus"><span className="statusDot" data-tone={presence.active ? "online" : "muted"} />{presence.eyebrow}</span>
     <h2>{presence.label}</h2>
-    <p>{presence.description}</p>
+    <p id={instructionId}>{instruction || presence.description}</p>
+    {modelCaption}
   </div>;
 }
 
-export default function AgentEnsemble({ avatar, mainName = "Hermes", presence, agents = [] }) {
+export default function AgentEnsemble({ avatar, mainName = "Hermes", presence, agents = [], mainControl = null, instructionId, modelCaption = null }) {
   const stageRef = useRef(null);
   const [stageVisible, setStageVisible] = useState(false);
   const { preferences, reducedMotion } = useInterfacePreferences();
@@ -47,10 +48,28 @@ export default function AgentEnsemble({ avatar, mainName = "Hermes", presence, a
   return <div className={`talkWorkspace__presence ${styles.ensemble}`} data-main-avatar={avatar} data-agent-count={agents.length} data-companion-float={floatEnabled || undefined} data-motion-active={floatEnabled && stageVisible || undefined}>
     <div className={styles.stage} ref={stageRef}>
       <div className={styles.main}>
-        <div className="talkWorkspace__orb"><MissionOrb size="hero" activity={presence.avatarActivity} avatar={avatar} agentName={mainName} /></div>
+        {mainControl ? <button
+          type="button"
+          className={`talkWorkspace__orb ${styles.mainControl} voiceDock__hold${mainControl.active ? ` ${styles.mainControlActive} is-active` : ""}${mainControl.stopResponse ? ` ${styles.mainControlStop}` : ""}`}
+          aria-label={`${mainControl.label} with ${mainName}`}
+          aria-describedby={instructionId}
+          aria-pressed={mainControl.pressed}
+          data-talk-voice-control="primary"
+          onClick={mainControl.onClick}
+          onPointerDown={mainControl.onPointerDown}
+          onPointerUp={mainControl.onPointerUp}
+          onPointerCancel={mainControl.onPointerCancel}
+          onLostPointerCapture={mainControl.onLostPointerCapture}
+          onBlur={mainControl.onBlur}
+          onKeyDown={mainControl.onKeyDown}
+          onKeyUp={mainControl.onKeyUp}
+        >
+          <MissionOrb size="hero" activity={presence.avatarActivity} avatar={avatar} agentName={mainName} />
+          <span className={styles.mainAction} data-stop={mainControl.stopResponse || undefined}>{mainControl.label}</span>
+        </button> : <div className="talkWorkspace__orb"><MissionOrb size="hero" activity={presence.avatarActivity} avatar={avatar} agentName={mainName} /></div>}
       </div>
       <div className={styles.companions}>{agents.map((agent, index) => <SideAgent key={agent.id} agent={agent} order={index} glow={preferences.companionGlow} />)}</div>
     </div>
-    <MainStatus presence={presence} />
+    <MainStatus presence={presence} instruction={mainControl?.description} instructionId={instructionId} modelCaption={modelCaption} />
   </div>;
 }

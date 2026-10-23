@@ -5,7 +5,7 @@ import { mockWorkspace } from "../helpers/workspace.js";
 const plan = { title: "Reading desk", outcome: "Track the books I want to read.", features: ["Editable reading list", "Notes for each reading session"], connections: [], boundaries: ["Local entries only"], checks: ["Entries survive reopening the tab"] };
 async function tabsFixture(page, { offerPlan = true } = {}) {
   await mockWorkspace(page);
-  let tab = null, run = null, messages = [], state = {}, actions = [];
+  let tab = null, run = null, messages = [], state = {}, actions = [], failNextDetailRead = false, malformNextDetailRead = false;
   await page.route("**/api/workspace-tabs**", route => {
     const url = new URL(route.request().url()), method = route.request().method();
     const parts = url.pathname.split("/").filter(Boolean);
@@ -13,6 +13,14 @@ async function tabsFixture(page, { offerPlan = true } = {}) {
     if (parts.length === 2) {
       if (method === "POST") tab ||= { id: body.id, title: "New tab", sessionId: "qa-plan", executionSessionId: "qa-execute", phase: "planning", storagePath: "/QA/tabs/reading", previewVersion: null, publishedVersion: null, archivedAt: null };
       return route.fulfill({ json: method === "POST" ? { tab } : { tabs: tab ? [{ ...tab, published: !!tab.publishedVersion }] : [] } });
+    }
+    if (method === "GET" && parts.length === 3 && failNextDetailRead) {
+      failNextDetailRead = false;
+      return route.fulfill({ status: 503, contentType: "text/plain", body: "temporarily unavailable" });
+    }
+    if (method === "GET" && parts.length === 3 && malformNextDetailRead) {
+      malformNextDetailRead = false;
+      return route.fulfill({ status: 200, contentType: "text/plain", body: "not json" });
     }
     if (parts[3] === "state") { if (method === "PUT") state = body.value; return route.fulfill({ json: method === "PUT" ? { saved: true } : { value: state } }); }
     if (parts[3] === "artifact") return route.fulfill({ json: { version: "version-1", spec: { title: "Reading desk", description: "Your local reading list.", blocks: [{ id: "notes", type: "notes", label: "Reading notes", title: "Notes" }] } } });
@@ -34,7 +42,7 @@ async function tabsFixture(page, { offerPlan = true } = {}) {
     }
     return route.fulfill({ json: { tab, messages, run } });
   });
-  return { actions, get tab() { return tab; } };
+  return { actions, failNextDetailRead() { failNextDetailRead = true; }, malformNextDetailRead() { malformNextDetailRead = true; }, get tab() { return tab; } };
 }
 
 test("workspace plus discusses requirements, reviews the plan, previews and explicitly adds a tab", async ({ page }) => {
@@ -63,10 +71,14 @@ test("workspace plus discusses requirements, reviews the plan, previews and expl
 });
 
 test("draft resumes after closing, archive is reversible, and planner fits a narrow screen", async ({ page }) => {
-  await tabsFixture(page); await page.setViewportSize({ width: 390, height: 844 });
+  await tabsFixture(page);
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/chat");
-  await page.getByText("Configuration", { exact: true }).click();
-  await expect(page.getByRole("navigation", { name: "Mobile configuration" }).getByRole("link", { name: "Models", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Search destinations" }).click();
+  await page.getByRole("textbox", { name: "Find a destination" }).fill("Models");
+  await expect(page.getByRole("dialog", { name: "Go to a workspace section" }).getByRole("link", { name: "Models", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Esc", exact: true }).click();
+  await page.setViewportSize({ width: 1280, height: 800 });
   const create = page.getByRole("button", { name: "Create a workspace tab" });
   await create.click();
   await page.getByRole("textbox", { name: "Message Hermes about your tab" }).fill("Help me design a desk.");
@@ -76,6 +88,7 @@ test("draft resumes after closing, archive is reversible, and planner fits a nar
   await expect(create).toBeFocused();
   await page.getByRole("button", { name: "New tab Draft" }).click();
   await expect(page.getByText("Help me design a desk.", { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByRole("button", { name: "Archive tab", exact: true }).click();
   await page.getByRole("button", { name: "Archive", exact: true }).click();
@@ -98,4 +111,21 @@ test("Prepare plan makes review discoverable when Hermes has not offered a plan"
   await expect(page.getByRole("region", { name: "Plan to review" })).toBeVisible();
   expect(fixture.actions.map(item => item.action)).toEqual(["message", "message", "plan"]);
   await expect(page.getByRole("button", { name: "Build this preview" })).toBeVisible();
+});
+
+test("planner reports a friendly transient poll failure and clears it after retry", async ({ page }) => {
+  const fixture = await tabsFixture(page);
+  await page.goto("/chat");
+  await page.getByRole("button", { name: "Create a workspace tab" }).click();
+  const input = page.getByRole("textbox", { name: "Message Hermes about your tab" });
+  await input.fill("Make a private reading list.");
+  await input.press("Enter");
+  await expect(page.getByText("Should this be a personal reading list, or a shared one?")).toBeVisible();
+  fixture.malformNextDetailRead();
+  await expect(page.getByRole("alert").filter({ hasText: "Panel returned an unreadable response. Try again." })).toBeVisible({ timeout: 5000 });
+  await expect(page.getByRole("alert").filter({ hasText: "Panel returned an unreadable response. Try again." })).toHaveCount(0, { timeout: 5000 });
+  fixture.failNextDetailRead();
+  await expect(page.getByRole("alert").filter({ hasText: "Panel could not complete this request." })).toBeVisible({ timeout: 5000 });
+  await expect(page.getByRole("alert").filter({ hasText: "Panel could not complete this request." })).toHaveCount(0, { timeout: 5000 });
+  await expect(page.getByText("Should this be a personal reading list, or a shared one?")).toBeVisible();
 });

@@ -1,6 +1,21 @@
 import { publicReplyText } from "../../lib/publicReply.js";
 import { MAX_ASSISTANT_TEXT, MAX_SPOKEN_TEXT } from "../../lib/conversation-limits.js";
 
+const FIRST_SPEECH_CHUNK_MIN_CHARS = 40;
+const FOLLOWUP_SPEECH_CHUNK_TARGET_CHARS = 240;
+
+export function createAnswerReconnectBackoff() {
+  let attempts = 0;
+  return {
+    next({ meaningful = false } = {}) {
+      if (meaningful) attempts = 0;
+      const delay = Math.min(5000, 500 * 2 ** attempts);
+      attempts += 1;
+      return delay;
+    },
+  };
+}
+
 /** Attribute first audible output once to each run, not once to every TTS
  * sentence. Later clips deliberately omit the first-answer latency field. */
 export function createAnswerAudioTiming() {
@@ -33,14 +48,19 @@ export function createAnswerSpeechBuffer() {
   let limitAnnounced = false;
   const previousMessages = [];
 
-  function prefixEnd(value, prefix) {
+  function sequenceEnd(value, sequence, { anywhere = false } = {}) {
     const normalize = (token) => token.replace(/[*_`]/g, "").replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
-    const expected = [...prefix.matchAll(/\S+/g)].map((match) => normalize(match[0])).filter(Boolean);
+    const expected = [...sequence.matchAll(/\S+/g)].map((match) => normalize(match[0])).filter(Boolean);
     if (!expected.length) return 0;
     const actual = [...value.matchAll(/\S+/g)].filter((match) => normalize(match[0]));
-    if (expected.length > actual.length || expected.some((token, index) => normalize(actual[index][0]) !== token)) return -1;
-    const last = actual[expected.length - 1];
-    return last.index + last[0].length;
+    if (expected.length > actual.length) return -1;
+    const lastStart = anywhere ? actual.length - expected.length : 0;
+    for (let start = 0; start <= lastStart; start += 1) {
+      if (expected.some((token, index) => normalize(actual[start + index][0]) !== token)) continue;
+      const last = actual[start + expected.length - 1];
+      return last.index + last[0].length;
+    }
+    return -1;
   }
 
   function drain(flush = false) {
@@ -48,6 +68,11 @@ export function createAnswerSpeechBuffer() {
     while (consumed < publicText.length) {
       const tail = publicText.slice(consumed);
       let end = 0;
+      const target = flush
+        ? FOLLOWUP_SPEECH_CHUNK_TARGET_CHARS
+        : spokenChars === 0
+          ? FIRST_SPEECH_CHUNK_MIN_CHARS
+          : FOLLOWUP_SPEECH_CHUNK_TARGET_CHARS;
       const boundaries = /[.!?]["')\]]*(?=\s|$)|\n{2,}/g;
       for (const boundary of tail.matchAll(boundaries)) {
         const candidate = boundary.index + boundary[0].length;
@@ -55,11 +80,24 @@ export function createAnswerSpeechBuffer() {
         if (/\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|vs|etc)\.$/i.test(prefix)) continue;
         if (/\d\.$/.test(prefix) && candidate === tail.length && !flush) continue;
         end = candidate;
-        break;
+        // A complete sentence is not automatically a good speech clip.
+        // Short fragments such as "Sure." reset ElevenLabs prosody and make
+        // durable streamed answers sound like isolated words. Keep adjacent
+        // sentences together until they form a natural utterance. The final
+        // drain still speaks short replies promptly once the run completes.
+        if (prefix.trim().length >= target) break;
       }
-      if (!end && tail.length > 280) end = tail.lastIndexOf(" ", 280);
+      if (end && tail.slice(0, end).trim().length < target) end = 0;
+      if (end > 280) {
+        const bounded = tail.lastIndexOf(" ", 280);
+        end = bounded > 0 ? bounded : 280;
+      }
+      if (!end && tail.length > 280) {
+        const bounded = tail.lastIndexOf(" ", 280);
+        end = bounded > 0 ? bounded : 280;
+      }
       if (!end && flush) end = tail.length;
-      if (!end) break;
+      if (end <= 0) break;
       const text = tail.slice(0, end).trim();
       consumed += end;
       if (!text) continue;
@@ -80,7 +118,7 @@ export function createAnswerSpeechBuffer() {
     get sequence() { return seq; },
     get received() { return received; },
     get text() { return publicText; },
-    accept(event) {
+    accept(event, { holdSpeech = false } = {}) {
       if (finished || !Number.isSafeInteger(event?.seq) || event.seq <= seq || typeof event.text !== "string") return null;
       seq = event.seq;
       const chunks = [];
@@ -100,7 +138,7 @@ export function createAnswerSpeechBuffer() {
       if (next.slice(0, consumed) !== publicText.slice(0, consumed)) return null;
       publicText = next;
       received ||= Boolean(publicText.trim());
-      chunks.push(...drain());
+      if (!holdSpeech) chunks.push(...drain());
       return { text: publicText, chunks };
     },
     finish(finalText) {
@@ -111,8 +149,19 @@ export function createAnswerSpeechBuffer() {
       // tail, speak only that tail; never replay the sentence already heard.
       const currentSpoken = publicText.slice(0, consumed);
       const allSpoken = previousMessages.concat(currentSpoken).join(" ");
-      const combinedEnd = previousMessages.length ? prefixEnd(final, allSpoken) : -1;
-      const currentEnd = prefixEnd(final, currentSpoken);
+      const combinedEnd = previousMessages.length ? sequenceEnd(final, allSpoken) : -1;
+      const currentEnd = sequenceEnd(final, currentSpoken);
+      // Some runtimes wrap their canonical result (for example, by prepending
+      // "Summary:") after streaming has already spoken the body. Match the
+      // complete normalized spoken word sequence at real token boundaries so
+      // we can continue after it without either replaying it or fuzzy-skipping
+      // unrelated new text.
+      const embeddedCombinedEnd = previousMessages.length && consumed > 0
+        ? sequenceEnd(final, allSpoken, { anywhere: true })
+        : -1;
+      const embeddedCurrentEnd = consumed > 0
+        ? sequenceEnd(final, currentSpoken, { anywhere: true })
+        : -1;
       // Some ACP servers omit message IDs and concatenate a tool preface
       // with its result. Match a complete already-spoken suffix defensively.
       const normalized = (text) => text.replace(/[*_`]/g, "").replace(/\s+/g, " ").trim();
@@ -121,9 +170,15 @@ export function createAnswerSpeechBuffer() {
       const suffixAt = answer ? spoken.length - answer.length : -1;
       const finalAlreadyHeard = suffixAt >= 0 && spoken.slice(suffixAt) === answer && (suffixAt === 0 || /[\s.!?:;]/.test(spoken[suffixAt - 1]));
       if (finalAlreadyHeard) { publicText = final; consumed = final.length; return []; }
-      if (combinedEnd > 0 || currentEnd > 0) {
+      if (combinedEnd > 0 || currentEnd > 0 || embeddedCombinedEnd > 0 || embeddedCurrentEnd > 0) {
         publicText = final;
-        consumed = combinedEnd > 0 ? combinedEnd : currentEnd;
+        consumed = combinedEnd > 0
+          ? combinedEnd
+          : currentEnd > 0
+            ? currentEnd
+            : embeddedCombinedEnd > 0
+              ? embeddedCombinedEnd
+              : embeddedCurrentEnd;
       } else if (final.startsWith(publicText)) publicText = final;
       else if (!publicText.trim() || consumed === 0) { publicText = final; consumed = 0; }
       else if (final.trim() !== publicText.trim()) {

@@ -281,10 +281,15 @@ test("QA2: saveVoiceConfig is imported in route.js but used only by PUT, not POS
 
 test("QA2: fast-path route code has no execFile, execFileAsync, or spawn('hermes')", () => {
   const route = readFileSync(resolve("app/api/voice/chat/route.js"), "utf8");
+  const handler = readFileSync(resolve("lib/voice-chat-handler.js"), "utf8");
   assert.doesNotMatch(route, /execFile/);
   assert.doesNotMatch(route, /execFileAsync/);
-  assert.match(route, /await startAssistantRun\(/);
+  assert.match(route, /return handleVoiceChatRequest\(request\)/);
+  assert.match(handler, /import\s+\{\s*startAssistantRun\s*\}\s+from/);
+  assert.match(handler, /\{\s*start\s*=\s*startAssistantRun\s*\}/);
+  assert.match(handler, /await start\(/);
   assert.doesNotMatch(route, /spawn\s*\(/);
+  assert.doesNotMatch(handler, /execFile|spawn\s*\(/);
   const launcher = readFileSync(resolve("lib/assistant-launch.js"), "utf8");
   assert.match(launcher, /import\s+\{\s*spawn\s*\}\s+from/);
   const spawnCalls = launcher.match(/spawnProcess\s*\(/g) || [];

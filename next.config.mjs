@@ -32,6 +32,7 @@ const nextConfig = {
   agentRules: false,
   distDir: process.env.HERMES_NEXT_DIST_DIR || ".next",
   turbopack: { root: process.cwd() },
+  experimental: { proxyClientMaxBodySize: "20mb" },
   reactStrictMode: true,
   generateBuildId: () => BUILD_ID,
   env: {

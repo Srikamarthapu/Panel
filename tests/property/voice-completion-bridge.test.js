@@ -18,6 +18,7 @@ import {
   isSpeakableCompletion,
   selectSpeakableCompletion,
   canSpeakCompletionNow,
+  canHandleCompletionNow,
 } from "../../components/voice/voiceMachine.js";
 
 function dispatch(wrapper, event) {
@@ -227,4 +228,53 @@ test("canSpeakCompletionNow is true only from rest states", () => {
 
 test("starting microphone holds completions", () => {
   assert.equal(canSpeakCompletionNow("starting"), false);
+});
+
+test("synchronous input ownership closes the pre-render completion race", () => {
+  const staleIdleView = { ...initialWrapper.state, state: "idle", requestPending: true, actionId: "old-run" };
+  assert.equal(canHandleCompletionNow(staleIdleView, { actionId: "old-run" }), true);
+  assert.equal(canHandleCompletionNow(staleIdleView, { actionId: "old-run" }, { inputOwned: true }), false);
+});
+
+test("a matching late run cannot take ownership from any live input phase", () => {
+  const variants = [
+    {},
+    { isError: true },
+    { textOnly: true },
+    { streamHandled: true },
+  ];
+  for (const state of ["starting", "capturing", "transcribing"]) {
+    for (const variant of variants) {
+      const before = wrapperInState(state);
+      before.state = {
+        ...before.state,
+        requestPending: true,
+        actionId: "old-run",
+        pttRequested: state !== "transcribing",
+      };
+      const event = {
+        type: "SPEAK_COMPLETION",
+        actionId: "old-run",
+        entryId: `old-${state}-${JSON.stringify(variant)}`,
+        text: variant.isError ? "The old run failed." : "The old run finished.",
+        ...variant,
+      };
+      assert.equal(canHandleCompletionNow(before.state, event), false);
+      const after = dispatch(before, event);
+      assert.deepEqual(after, before, `${state} must retain the complete input turn for ${JSON.stringify(variant)}`);
+    }
+  }
+});
+
+test("a held matching completion remains eligible and settles after input returns to rest", () => {
+  const event = { type: "SPEAK_COMPLETION", actionId: "old-run", entryId: "old-run-result", text: "The old run finished." };
+  const capturing = wrapperInState("capturing");
+  capturing.state = { ...capturing.state, requestPending: true, actionId: "old-run", pttRequested: true };
+  assert.deepEqual(dispatch(capturing, event), capturing);
+  const rested = { ...capturing, state: { ...capturing.state, state: "idle", pttRequested: false } };
+  assert.equal(canHandleCompletionNow(rested.state, event), true);
+  const accepted = dispatch(rested, event);
+  assert.equal(accepted.state.requestPending, false);
+  assert.equal(accepted.state.transcript.at(-1)?.text, "The old run finished.");
+  assert.deepEqual(accepted.effects, [{ kind: "callTTS", text: "The old run finished." }]);
 });

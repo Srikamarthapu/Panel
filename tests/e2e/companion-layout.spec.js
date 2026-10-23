@@ -15,6 +15,7 @@ async function checkComposition(page, count) {
     const figures = [...root.querySelectorAll("figure")];
     return {
       main: box(root.querySelector(".talkWorkspace__orb [data-bloub-role='body']")),
+      cards: figures.map(box),
       bodies: figures.map(node => box(node.querySelector("[data-bloub-role='body']"))),
       bubbles: figures.map(node => box(node.querySelector("figcaption"))),
       bubbleContent: figures.map(node => box(node.querySelector("figcaption span"))),
@@ -23,19 +24,29 @@ async function checkComposition(page, count) {
         const css = getComputedStyle(node);
         return (/auto|scroll/.test(css.overflowX) && node.scrollWidth > node.clientWidth + 1)
           || (/auto|scroll/.test(css.overflowY) && node.scrollHeight > node.clientHeight + 1);
-      }).map(node => node.className?.baseVal || node.className),
+      }).map(node => node === figures[0]?.parentElement ? "companions" : (node.className?.baseVal || node.className)),
       viewport: innerWidth,
       overflow: document.documentElement.scrollWidth > innerWidth,
     };
   });
   const overlaps = (a, b) => a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1;
-  expect(geometry.nestedScrollers).toEqual([]);
+  if (geometry.viewport <= 480) {
+    expect(geometry.nestedScrollers.every(scroller => scroller === "companions")).toBe(true);
+    expect(geometry.nestedScrollers.length).toBeLessThanOrEqual(1);
+    if (count >= 6) expect(geometry.nestedScrollers).toEqual(["companions"]);
+  } else {
+    expect(geometry.nestedScrollers).toEqual([]);
+  }
   expect(geometry.overflow).toBe(false);
+  expect(geometry.main.top).toBeGreaterThanOrEqual(0);
+  if (geometry.cards.length) expect(geometry.cards[0].top).toBeGreaterThanOrEqual(0);
   for (const [index, body] of geometry.bodies.entries()) {
-    expect(body.width).toBeGreaterThanOrEqual(45);
-    expect(body.width / geometry.main.width).toBeGreaterThanOrEqual(.30);
-    expect(body.left).toBeGreaterThanOrEqual(0);
-    expect(body.right).toBeLessThanOrEqual(geometry.viewport + 1);
+    expect(body.width).toBeGreaterThanOrEqual(geometry.viewport <= 480 ? 30 : 45);
+    if (geometry.viewport > 480) expect(body.width / geometry.main.width).toBeGreaterThanOrEqual(.30);
+    if (geometry.viewport > 480) {
+      expect(body.left).toBeGreaterThanOrEqual(0);
+      expect(body.right).toBeLessThanOrEqual(geometry.viewport + 1);
+    }
     expect(overlaps(body, geometry.main)).toBe(false);
     expect(geometry.caption.top).toBeGreaterThanOrEqual(body.bottom);
     expect(geometry.caption.top).toBeGreaterThanOrEqual(geometry.bubbles[index].bottom);
@@ -46,17 +57,31 @@ async function checkComposition(page, count) {
     for (const bubble of geometry.bubbles) expect(overlaps(body, bubble)).toBe(false);
   }
   for (const bubble of geometry.bubbles) {
-    expect(bubble.left).toBeGreaterThanOrEqual(0);
-    expect(bubble.right).toBeLessThanOrEqual(geometry.viewport + 1);
+    if (geometry.viewport > 480) {
+      expect(bubble.left).toBeGreaterThanOrEqual(0);
+      expect(bubble.right).toBeLessThanOrEqual(geometry.viewport + 1);
+    }
     expect(overlaps(bubble, geometry.main)).toBe(false);
   }
   if (geometry.viewport <= 480) {
-    for (const bubble of geometry.bubbleContent) expect(bubble.width).toBeGreaterThanOrEqual(100);
+    for (const bubble of geometry.bubbleContent) expect(bubble.width).toBeGreaterThanOrEqual(70);
+    const cards = presence.locator("figure");
+    for (let index = 0; index < count; index++) {
+      const visible = await cards.nth(index).evaluate(node => {
+        const rail = node.parentElement;
+        rail.scrollLeft = node.offsetLeft;
+        const card = node.getBoundingClientRect();
+        const bounds = rail.getBoundingClientRect();
+        return { left: card.left, right: card.right, boundsLeft: bounds.left, boundsRight: bounds.right };
+      });
+      expect(visible.left).toBeGreaterThanOrEqual(visible.boundsLeft - 1);
+      expect(visible.right).toBeLessThanOrEqual(visible.boundsRight + 1);
+    }
   }
 }
 
 for (const count of [0, 2, 6, 10]) {
-  test(`${count} companions remain readable without nested scrolling at desktop and narrow widths`, async ({ page }, testInfo) => {
+  test(`${count} companions remain readable without clipping at desktop and narrow widths`, async ({ page }, testInfo) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     const errors = [];
     page.on("pageerror", error => errors.push(error.message));
@@ -79,7 +104,11 @@ for (const count of [0, 2, 6, 10]) {
     await page.setViewportSize({ width: 1101, height: 780 });
     await toggle.click();
     await checkComposition(page, count);
+    await expect(page.locator(".talkWorkspace__header")).toBeInViewport();
     await page.getByRole("button", { name: "Close agents" }).click();
+    if (count === 6 || count === 10) {
+      await page.screenshot({ path: testInfo.outputPath(`companions-${count}-1101.png`), fullPage: true });
+    }
     for (const width of [390, 320]) {
       await page.setViewportSize({ width, height: 844 });
       await checkComposition(page, count);

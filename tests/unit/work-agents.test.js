@@ -14,6 +14,7 @@ process.env.HERMES_HOME = path.join(temporary, "empty-hermes-home");
 process.env.HERMES_VOICE_TRANSPORT = "legacy";
 
 const agents = await import("../../lib/work-agents.js");
+const capabilities = await import("../../lib/agent-capabilities.js");
 const actions = await import("../../lib/agent-actions.js");
 const sessions = await import("../../lib/work-sessions.js");
 const runs = await import("../../lib/assistant-runs.js");
@@ -21,6 +22,12 @@ const { requestFileForRun } = await import("../../lib/assistant-runs.js");
 
 const reset = () => fs.rmSync(store, { recursive: true, force: true });
 const statusIs = status => error => error?.status === status;
+function asLegacy(agent) {
+  const config = JSON.parse(fs.readFileSync(agent.configPath, "utf8"));
+  delete config.capabilityPolicy;
+  fs.writeFileSync(agent.configPath, JSON.stringify(config));
+  return agents.getWorkAgent(agent.id);
+}
 function fakeSpawner() {
   const calls = [];
   const spawnProcess = (command, args, options) => {
@@ -68,6 +75,69 @@ test("two profiles keep separate SOUL.md files, workspaces, sessions, and model 
   assert.equal(sessions.getWorkSession(second.sessionId).agentId, second.id);
   assert.equal(agents.getWorkAgent(first.id).soul, first.soul);
   assert.equal(agents.getWorkAgent(second.id).soul, second.soul);
+});
+
+test("capability policies default to none, validate installed choices, and cannot be widened with null", async () => {
+  const previousRepo = process.env.HERMES_REPO;
+  const fakeRepo = path.join(temporary, "fake-hermes-repo");
+  const skillDir = path.join(process.env.HERMES_HOME, "skills", "research-notes");
+  fs.mkdirSync(fakeRepo, { recursive: true });
+  fs.writeFileSync(path.join(fakeRepo, "toolsets.py"), `TOOLS = {"web_search": object()}\n`);
+  fs.mkdirSync(skillDir, { recursive: true });
+  fs.writeFileSync(path.join(skillDir, "SKILL.md"), "---\nname: research-notes\ndescription: Keep research notes.\n---\nUse evidence.\n");
+  for (const folder of ["duplicate-a", "duplicate-b"]) {
+    const duplicate = path.join(process.env.HERMES_HOME, "skills", folder);
+    fs.mkdirSync(duplicate, { recursive: true });
+    fs.writeFileSync(path.join(duplicate, "SKILL.md"), "---\nname: duplicate-name\ndescription: Duplicate.\n---\nInstructions.\n");
+  }
+  const malformed = path.join(process.env.HERMES_HOME, "skills", "malformed");
+  fs.mkdirSync(malformed, { recursive: true });
+  fs.writeFileSync(path.join(malformed, "SKILL.md"), "---\nname: never-closed\nInstructions without a closing frontmatter fence.\n");
+  process.env.HERMES_REPO = fakeRepo;
+  try {
+    const catalog = capabilities.agentCapabilityCatalog();
+    assert.equal(catalog.tools.find(item => item.id === "web_search").available, true);
+    assert.equal(catalog.tools.find(item => item.id === "terminal").available, false);
+    assert.equal(catalog.skills.some(item => item.id === "never-closed"), false);
+    assert.equal(catalog.skills.find(item => item.id === "duplicate-name").ambiguous, true);
+    const empty = agents.createWorkAgent({ id: "empty-policy", name: "No capabilities" });
+    assert.deepEqual(empty.capabilityPolicy, { version: 1, tools: { mode: "allow", ids: [] }, skills: { mode: "allow", ids: [] } });
+
+    const restricted = agents.createWorkAgent({
+      id: "restricted-policy", name: "Restricted",
+      capabilityPolicy: { version: 1, tools: { mode: "allow", ids: ["web_search"] }, skills: { mode: "allow", ids: ["research-notes"] } },
+    });
+    assert.deepEqual(restricted.capabilityPolicy.tools.ids, ["web_search"]);
+    assert.deepEqual(restricted.capabilityPolicy.skills.ids, ["research-notes"]);
+    assert.deepEqual(agents.updateWorkAgent(restricted.id, { capabilityPolicy: null }).capabilityPolicy, {
+      version: 1, tools: { mode: "allow", ids: [] }, skills: { mode: "allow", ids: [] },
+    });
+    assert.throws(() => agents.updateWorkAgent(restricted.id, {
+      capabilityPolicy: { version: 1, tools: { mode: "allow", ids: ["terminal"] }, skills: { mode: "allow", ids: [] } },
+    }), /unavailable capability/i);
+
+    const legacyPath = path.join(store, "agents", empty.id, "agent.json");
+    const legacyConfig = JSON.parse(fs.readFileSync(legacyPath, "utf8"));
+    delete legacyConfig.capabilityPolicy;
+    fs.writeFileSync(legacyPath, JSON.stringify(legacyConfig));
+    assert.equal(agents.getWorkAgent(empty.id).capabilityPolicy, null);
+    assert.equal(agents.updateWorkAgent(empty.id, { capabilityPolicy: null }).capabilityPolicy, null);
+
+    const missingPath = path.join(store, "agents", restricted.id, "agent.json");
+    const missingConfig = JSON.parse(fs.readFileSync(missingPath, "utf8"));
+    missingConfig.capabilityPolicy = { version: 1, tools: { mode: "allow", ids: [] }, skills: { mode: "allow", ids: ["removed-skill"] } };
+    fs.writeFileSync(missingPath, JSON.stringify(missingConfig));
+    const readable = agents.getWorkAgent(restricted.id);
+    assert.deepEqual(readable.capabilityPolicy.skills.ids, ["removed-skill"]);
+    assert.match(readable.capabilityPolicyError, /removed-skill/);
+    assert.ok(agents.listWorkAgents().some(agent => agent.id === restricted.id));
+    assert.throws(() => agents.agentForSession(sessions.getWorkSession(restricted.sessionId)), /removed-skill/);
+    await assert.rejects(actions.runWorkAgent(restricted.id, { text: "Do not start." }), /removed-skill/);
+    assert.throws(() => agents.updateWorkAgent(restricted.id, { capabilityPolicy: readable.capabilityPolicy }), /unavailable capability/i);
+  } finally {
+    if (previousRepo === undefined) delete process.env.HERMES_REPO;
+    else process.env.HERMES_REPO = previousRepo;
+  }
 });
 
 test("repeating a profile creation ID returns the original profile and native session", () => {
@@ -144,13 +214,13 @@ test("archiving and reopening a profile preserves its session, workspace, model,
 });
 
 test("archiving an agent conversation keeps the profile and starts its next task in a fresh conversation", async () => {
-  const agent = agents.createWorkAgent({
+  const agent = asLegacy(agents.createWorkAgent({
     id: "conversation-independent-profile",
     name: "Persistent researcher",
     soul: "Keep the profile while preserving old conversations.",
     provider: "provider-a",
     model: "model-a",
-  });
+  }));
   const oldRun = runs.createAssistantRun({ id: "old-agent-turn", sessionId: agent.sessionId, text: "Preserve this prompt." });
   runs.updateAssistantRun(oldRun.id, { state: "complete", response: "Preserve this answer." });
   const oldMessages = sessions.getWorkSession(agent.sessionId).messages;
@@ -232,20 +302,20 @@ test("missing work folders are rejected and stale sessions fail closed when a pr
 });
 
 test("agent runs receive profile provider, model, workspace, and SOUL.md read from disk", async () => {
-  const first = agents.createWorkAgent({
+  const first = asLegacy(agents.createWorkAgent({
     id: "profile-run-a",
     name: "Runner A",
     soul: "A real profile file for runner A.",
     provider: "provider-a",
     model: "model-a",
-  });
-  const second = agents.createWorkAgent({
+  }));
+  const second = asLegacy(agents.createWorkAgent({
     id: "profile-run-b",
     name: "Runner B",
     soul: "A different profile file for runner B.",
     provider: "provider-b",
     model: "model-b",
-  });
+  }));
   const caller = sessions.createWorkSession({ name: "Calling conversation" });
   const spawner = fakeSpawner();
 
@@ -262,6 +332,8 @@ test("agent runs receive profile provider, model, workspace, and SOUL.md read fr
     assert.equal(fs.realpathSync(payload.workingDirectory), fs.realpathSync(agent.workingDirectory));
     assert.equal(payload.provider, agent.provider);
     assert.equal(payload.model, agent.model);
+    if (agent.capabilityPolicy === null) assert.equal(payload.agentPolicy, undefined);
+    else assert.deepEqual(payload.agentPolicy, agent.capabilityPolicy);
     assert.equal(payload.text, text);
     assert.equal(payload.textOnly, true);
     assert.equal(runs.getAssistantRun(actionId, agent.sessionId).parentSessionId, caller.id);
@@ -275,7 +347,7 @@ test("agent runs receive profile provider, model, workspace, and SOUL.md read fr
 });
 
 test("caller sessions cannot inspect or stop another session's delegated agent run", async () => {
-  const agent = agents.createWorkAgent({ id: "child-agent", name: "Child agent" });
+  const agent = asLegacy(agents.createWorkAgent({ id: "child-agent", name: "Child agent" }));
   const caller = sessions.createWorkSession({ name: "Caller" });
   const other = sessions.createWorkSession({ name: "Different caller" });
   const { spawnProcess } = fakeSpawner();

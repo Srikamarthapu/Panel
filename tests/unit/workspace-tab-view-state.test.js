@@ -40,3 +40,16 @@ test("workspace action prompt substitutes current native state and empties unkno
     'Review erosion / Careful / check dates / Sources / [{"Source":"NOAA","Claim":"Observed"}] /',
   );
 });
+
+test("workspace action prompt rejects unsafe characters introduced by saved state", () => {
+  for (const value of ["hidden\u0085text", "hidden\u009Btext", "hidden\u180Etext", "hidden\u200Btext", "\uFEFFedge", "tag\u{E0000}text"]) {
+    const state = normalizeWorkspaceTabState(spec, { fields: { topic: value } });
+    assert.equal(workspaceActionPrompt(spec, state, "Review {{topic}}"), null);
+  }
+});
+
+test("workspace action prompt preserves joiners, variation selectors, and emoji", () => {
+  const value = "می‌خواهم 👨‍👩‍👧‍👦 ✈️";
+  const state = normalizeWorkspaceTabState(spec, { fields: { topic: value } });
+  assert.equal(workspaceActionPrompt(spec, state, "Review {{topic}}"), `Review ${value}`);
+});

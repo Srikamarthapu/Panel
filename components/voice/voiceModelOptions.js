@@ -9,5 +9,5 @@ export const VOICE_REASONING_OPTIONS = [
 export function voiceModelLabel(config = {}) {
   return config.voiceModel
     ? `${config.voiceModelProvider || "auto"} / ${config.voiceModel}`
-    : "Hermes default";
+    : "Following main model";
 }

@@ -7,6 +7,7 @@ import "./conversation.css";
 import "./work.css";
 import "./models-refinement.css";
 import "./preferences.css";
+import "./direct-connection.css";
 import "./workspace-refinement.css";
 import WorkSessionProvider from "@/components/work/WorkSessionProvider.jsx";
 import InterfacePreferencesProvider from "@/components/preferences/InterfacePreferencesProvider.jsx";
@@ -20,7 +21,7 @@ export const metadata = {
 
 // Apply saved appearance before first paint so a non-sage palette does not
 // flash sage while the preferences provider hydrates.
-const appearanceScript = `try{var p=JSON.parse(localStorage.getItem(${JSON.stringify(INTERFACE_PREFERENCES_KEY)})||"{}"),d=document.documentElement;if(["blue","peach","lilac"].indexOf(p.avatarColor)>-1)d.dataset.panelAccent=p.avatarColor;if(p.textSize==="larger")d.dataset.panelTextSize="larger";if(p.conversationSpacing==="compact")d.dataset.panelConversationSpacing="compact"}catch(e){}`;
+const appearanceScript = `try{var p=JSON.parse(localStorage.getItem(${JSON.stringify(INTERFACE_PREFERENCES_KEY)})||"{}"),d=document.documentElement;if(["blue","peach","lilac"].indexOf(p.avatarColor)>-1)d.dataset.panelAccent=p.avatarColor;if(p.textSize==="larger")d.dataset.panelTextSize="larger";if(p.conversationSpacing==="compact")d.dataset.panelConversationSpacing="compact";d.dataset.panelSidebar=p.sidebarCollapsed===true?"collapsed":"expanded"}catch(e){}`;
 
 export default function RootLayout({ children }) {
   return (

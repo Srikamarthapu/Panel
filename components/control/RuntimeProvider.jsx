@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useVoice } from "@/components/voice/VoiceProvider.jsx";
 import { deriveOrbActivity } from "@/lib/control-center-status.js";
+import { startAdaptivePolling } from "@/lib/adaptive-poll.js";
 
 const RuntimeContext = createContext(null);
 export const useRuntime = () => useContext(RuntimeContext);
@@ -16,13 +17,9 @@ export default function RuntimeProvider({ children }) {
   const [now, setNow] = useState(0);
   useEffect(() => {
     let stopped = false;
-    let timer;
     let controller;
-    let busy = false;
-    async function refresh(force = false) {
-      if (stopped || busy || (document.hidden && force !== true)) return;
-      clearTimeout(timer);
-      busy = true;
+    async function refresh() {
+      if (stopped) return;
       controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 8000);
       try {
@@ -31,31 +28,24 @@ export default function RuntimeProvider({ children }) {
         const data = await response.json();
         if (!stopped) { setSnapshot(data); setFetchedAt(Date.now()); setError(null); }
       } catch (err) {
-        if (!stopped) setError("Live updates interrupted");
-      } finally {
-        clearTimeout(timeout);
-        busy = false;
-        if (!stopped) { setNow(Date.now()); timer = setTimeout(refresh, 3000); }
-      }
+        throw err;
+      } finally { clearTimeout(timeout); if (!stopped) setNow(Date.now()); }
     }
-    function onVisibility() {
-      clearTimeout(timer);
-      if (!document.hidden) { setNow(Date.now()); refresh(); }
-    }
+    const polling = startAdaptivePolling({ poll: refresh, baseDelay: 3000, maxDelay: 30000, forceInitial: true, onError: () => { if (!stopped) setError("Live updates interrupted"); } });
     // A native webview may mount before its first visibility notification.
     // Always load one snapshot, then suspend background polling as usual.
-    function onFocus() { refresh(true); }
-    refresh(true);
-    window.addEventListener("voice-activity", refresh);
+    function onRefresh() { void polling.refresh(); }
+    function onFocus() { void polling.refresh({ force: true }); }
+    window.addEventListener("voice-activity", onRefresh);
+    window.addEventListener("panel-runtime-changed", onRefresh);
     window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       stopped = true;
-      clearTimeout(timer);
+      polling.stop();
       controller?.abort();
-      window.removeEventListener("voice-activity", refresh);
+      window.removeEventListener("voice-activity", onRefresh);
+      window.removeEventListener("panel-runtime-changed", onRefresh);
       window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
   const value = useMemo(() => ({

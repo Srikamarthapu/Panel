@@ -12,11 +12,9 @@ import path from "node:path";
  *
  * Two backends:
  *   - "elevenlabs" (default when keys are configured) — high-quality neural
- *      TTS. We hit the streaming endpoint with optimize_streaming_latency=2
- *      so first audio bytes arrive in ~200-400ms and we forward chunks to
- *      the browser as they land. Same model, same voice settings, same
- *      mp3_44100_128 quality as before — only transport changed. On total
- *      key exhaustion or pre-stream failure we fall through to edge-tts.
+ *      TTS. Full answers use the provider's quality-first streaming default;
+ *      short feedback cues explicitly retain low-latency optimization. On
+ *      total key exhaustion or pre-stream failure we fall through to edge-tts.
  *   - "edge-tts" — Microsoft Edge neural voices via the local Python CLI.
  */
 export async function POST(request) {
@@ -43,6 +41,7 @@ export async function POST(request) {
     Array.isArray(config.elevenlabsApiKeys)
       ? config.elevenlabsApiKeys.filter(Boolean).length > 0
       : Boolean(config.elevenlabsApiKey);
+  const latencyOptimized = body.latencyOptimized === true;
 
   if (backend === "elevenlabs" && elevenlabsConfigured) {
     try {
@@ -53,6 +52,7 @@ export async function POST(request) {
         voiceSettings: body.voiceSettings || config.elevenlabsVoiceSettings,
         config,
         signal: request.signal,
+        optimizeStreamingLatency: latencyOptimized,
       });
       return new Response(stream, {
         status: 200,

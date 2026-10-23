@@ -160,9 +160,16 @@
   font-size: 11px;
 }
 
+.presence strong { color: var(--fg-1); font-weight: 560; }
+.presence span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .presence i { width: 6px; height: 6px; border-radius: 50%; background: var(--fg-2); }
-.presence[data-state="working"] i { background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
-.presence[data-state="error"] i { background: #d8a080; }
+.presence[data-state="queued"] i,
+.presence[data-state="running"] i,
+.presence[data-state="stopping"] i { background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.presence[data-state="approval"] i,
+.presence[data-state="failed"] i { background: #d8a080; }
+.presence[data-state="completed"] i { background: #81b79a; }
 
 .description {
   min-height: 42px;
@@ -208,6 +215,17 @@
 .facts dt { margin-bottom: 6px; color: var(--fg-2); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
 .facts dd { margin: 0; overflow: hidden; color: var(--fg-1); font-size: 11px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
 .telemetryNote { margin: 16px 0 0; color: var(--fg-2); font-size: 10px; line-height: 1.6; }
+
+.currentTask {
+  margin-top: 15px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+}
+
+.currentTask > span { color: var(--accent); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.currentTask p { margin: 7px 0 0; color: var(--fg-1); font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
 
 .result { margin-top: 14px; color: var(--fg-2); font-size: 11px; }
 .result summary { min-height: 32px; padding: 7px 0; cursor: pointer; }
@@ -273,13 +291,17 @@
 .delegatedCard h3 { margin: 0; font-size: 13px; font-weight: 520; }
 .delegatedCard > div p { margin: 4px 0 0; color: var(--accent); font-size: 10px; }
 .delegatedTask { margin: 14px 0 0; color: var(--fg-2); font-size: 12px; line-height: 1.65; }
+.delegatedProgress { margin: 8px 0 0; color: var(--fg-2); font-size: 10px; }
+.delegatedCard[data-state="failed"] { border-color: color-mix(in srgb, #d8a080 45%, var(--line)); }
+.delegatedCard[data-state="completed"] { border-color: color-mix(in srgb, #81b79a 40%, var(--line)); }
 .delegatedCard footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 16px; }
 .delegatedCard footer button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0; border: 0; background: none; color: var(--fg-2); font: inherit; font-size: 11px; cursor: pointer; }
 .delegatedCard footer button:hover { color: var(--fg-1); }
 .delegatedCard footer button:disabled { opacity: .5; cursor: not-allowed; }
 .footnote { margin: 24px 0 0; color: var(--fg-2); font-size: 11px; line-height: 1.7; }
+.footnote a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 
-:is(.summary, .views button, .actions button, .task textarea, .task button):focus-visible {
+:is(.summary, .views button, .actions button, .task textarea, .task button, .delegatedCard button, .footnote a):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }

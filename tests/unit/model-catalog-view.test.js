@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { catalogModels, filterCatalogModels, currentModelForRole, isCurrentModel, modelSourceLabel, modelAvailabilityLabel, canAssignCustomModel } from "../../lib/model-catalog-view.js";
+import { catalogModels, filterCatalogModels, currentModelForRole, isCurrentModel, modelSourceLabel, modelAvailabilityLabel, modelSelectionState, canAssignCustomModel } from "../../lib/model-catalog-view.js";
 import { sanitizeModelCatalog, validateModelSelection } from "../../lib/model-catalog.js";
 
 const catalog = {
@@ -54,12 +54,23 @@ test("role assignments preserve follow-primary voice and provider-sensitive sele
   for (const role of ["primary", "fallback", "voice"]) assert.equal(currentModelForRole(empty, role), null);
 });
 
+test("selection mode distinguishes saved, pinned, inherited, unset, and unknown choices", () => {
+  assert.deepEqual(modelSelectionState(null, "voice"), { state: "unknown", assignment: null, effective: null, label: "Selection unknown" });
+  assert.equal(modelSelectionState(catalog, "primary").state, "selected");
+  assert.equal(modelSelectionState(catalog, "fallback").label, "Saved choice");
+  assert.equal(modelSelectionState(catalog, "voice").state, "pinned");
+  const inherited = modelSelectionState({ ...catalog, voice: { usesDefault: true } }, "voice");
+  assert.equal(inherited.state, "inherited");
+  assert.equal(inherited.effective.model, "same");
+  assert.equal(modelSelectionState({ ...catalog, current: { ...catalog.current, fallback: null } }, "fallback").state, "unset");
+});
+
 test("source labels preserve the distinction between installed, configured, and provider lists", () => {
   assert.equal(modelSourceLabel("installed"), "Installed Hermes catalog");
   assert.equal(modelSourceLabel("current-config"), "Your configuration");
   assert.equal(modelSourceLabel("live"), "Provider catalog");
   assert.equal(modelSourceLabel("hermes-cache"), "Cached provider catalog");
-  assert.equal(modelAvailabilityLabel({}), "Available to choose");
+  assert.equal(modelAvailabilityLabel({}), "Not tested");
   assert.equal(modelAvailabilityLabel({ availability: "deprecated" }), "Hosted endpoint deprecated");
 });
 
@@ -88,12 +99,12 @@ test("saved roles and explicit test results have separate truthful access states
   const models = catalogModels({ ...catalog, providers: catalog.providers.map(provider => ({
     ...provider, supportsProbe: true, models: provider.models.map(model => model.id === "voice" ? { ...model, probe: { ok: false, detail: "Provider is rate limited." } } : model),
   })) });
-  assert.equal(models.find(model => model.provider === "local" && model.model === "same").accessLabel, "Configured");
-  assert.equal(models.find(model => model.provider === "remote" && model.model === "same").accessLabel, "Available to choose");
-  assert.equal(models.find(model => model.model === "voice").accessLabel, "Configured · test failed");
+  assert.equal(models.find(model => model.provider === "local" && model.model === "same").accessLabel, "Not tested");
+  assert.equal(models.find(model => model.provider === "remote" && model.model === "same").accessLabel, "Not tested");
+  assert.equal(models.find(model => model.model === "voice").accessLabel, "Test failed");
   assert.equal(models.find(model => model.model === "voice").selectable, true);
   assert.equal(models.find(model => model.model === "voice").canTest, true);
-  assert.equal(models.find(model => model.provider === "unconfigured").accessLabel, "Provider needs setup");
+  assert.equal(models.find(model => model.provider === "unconfigured").accessLabel, "Access unknown · provider needs setup");
   assert.equal(models.find(model => model.provider === "unconfigured").canTest, false);
 });
 
@@ -102,10 +113,10 @@ test("default choices hide obsolete IDs, keep saved assignments, and preserve pa
   const models = catalogModels(partial);
   assert.deepEqual(filterCatalogModels(models).map(model => model.model), ["saved", "new"]);
   assert.equal(filterCatalogModels(models, { provider: "all" }).length, 3);
-  assert.equal(models.find(model => model.model === "saved").accessLabel, "Configured");
+  assert.equal(models.find(model => model.model === "saved").accessLabel, "Not tested");
   assert.equal(partial.providers[0].models.length, 2, "normalizing must not mutate the cached server response");
   const orphan = catalogModels({ current: { provider: "missing-provider", model: "saved" }, providers: [] });
-  assert.equal(orphan[0].accessLabel, "Saved · provider needs setup");
+  assert.equal(orphan[0].accessLabel, "Access unknown · provider needs setup");
   assert.equal(orphan[0].selectable, false);
   assert.equal(filterCatalogModels(orphan).length, 1);
 });
@@ -113,7 +124,7 @@ test("default choices hide obsolete IDs, keep saved assignments, and preserve pa
 test("a valid provider response supports tested status without silently claiming configured access", () => {
   const models = catalogModels({ providers: [{ id: "remote", configured: true, supportsProbe: true, models: [{ id: "tested", probe: { ok: true } }, { id: "native" }] }] });
   assert.equal(models[0].accessLabel, "Test passed");
-  assert.equal(models[1].accessLabel, "Available to choose");
+  assert.equal(models[1].accessLabel, "Not tested");
   const safe = sanitizeModelCatalog({ providerCredentialRevisions: { remote: "b".repeat(64) }, credentialConfigRevision: "a".repeat(64), credentialEnvVars: ["CUSTOM_PRIVATE_KEY"], providers: [{ id: "remote", configured: true, supportsProbe: true, models: [{ id: "tested", apiKey: "secret", probe: { rawBody: "secret" } }] }] });
   assert.equal(safe.providers[0].supportsProbe, true);
   assert.equal(JSON.stringify(safe).includes("secret"), false);

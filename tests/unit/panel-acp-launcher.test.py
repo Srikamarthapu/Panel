@@ -1,22 +1,70 @@
 import builtins
+import ast
+import asyncio
 import importlib.util
+import io
+import json
 import os
 import sys
 import tempfile
+import textwrap
 import types
 import unittest
 from pathlib import Path
 from unittest import mock
+from contextlib import redirect_stdout
 
 
 REPO = Path(__file__).resolve().parents[2]
 LAUNCHER_PATH = REPO / "scripts/voice/launch-panel-acp.py"
+ADAPTER_PATH = REPO / "scripts/voice/panel-acp.py"
 SPEC = importlib.util.spec_from_file_location("panel_acp_launcher", LAUNCHER_PATH)
 launcher = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(launcher)
 
 
 class PanelACPLauncherTests(unittest.TestCase):
+    def test_control_factory_keeps_exact_subclass_manager_and_terminal_hook(self):
+        source = ADAPTER_PATH.read_text()
+        tree = ast.parse(source)
+        control = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "ControlACPAgent")
+        methods = {node.name: textwrap.dedent(ast.get_source_segment(source, node)) for node in control.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        events = []
+        real_print = print
+
+        def protocol_print(*args, **kwargs):
+            self.assertEqual(events, ["native-finished"])
+            events.append("panel-result")
+            real_print(*args, **kwargs)
+
+        definition = "\n".join([
+            "class GatewayACPAgent: pass",
+            "class HermesACPAgent:",
+            "    def __new__(cls, session_manager=None):",
+            "        return GatewayACPAgent() if session_manager is None else object.__new__(cls)",
+            "    def __init__(self, session_manager=None): self.session_manager = session_manager",
+            "    async def _finish_turn(self, state, session_id, conn, result, pre_turn_hermes_id, streamed_message):",
+            "        events.append('native-finished')",
+            "        return {'stopReason': 'end_turn'}",
+            "class ControlSessionManager: pass",
+            "class ControlACPAgent(HermesACPAgent):",
+            textwrap.indent(methods["__new__"], "    "),
+            textwrap.indent(methods["__init__"], "    "),
+            textwrap.indent(methods["_finish_turn"], "    "),
+        ])
+        namespace = {"events": events, "json": json, "Mapping": dict, "print": protocol_print, "_usage_integer": lambda value: None, "_usage_cost": lambda value: None}
+        exec(definition, namespace)
+        instance = namespace["ControlACPAgent"]()
+        self.assertIs(type(instance), namespace["ControlACPAgent"])
+        self.assertIs(type(instance.session_manager), namespace["ControlSessionManager"])
+        state = types.SimpleNamespace(agent=types.SimpleNamespace(_panel_usage_baseline=None, _last_turn_usage=None), cancel_event=None)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            response = asyncio.run(instance._finish_turn(state, "native", object(), {"final_response": "Done.", "completed": True}, None, True))
+        self.assertEqual(events, ["native-finished", "panel-result"])
+        self.assertEqual(response, {"stopReason": "end_turn"})
+        self.assertEqual(json.loads(output.getvalue())["params"]["text"], "Done.")
+
     def test_uses_hermes_runtime_command_when_pm_is_available(self):
         repo = Path("/fake/hermes")
         calls = []
@@ -99,6 +147,8 @@ class PanelACPLauncherTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0][2], "1")
         self.assertIn("ControlACPAgent", calls[0][1])
+        self.assertIn("type(instance) is not control_type", calls[0][1])
+        self.assertIn("isinstance(getattr(instance", calls[0][1])
 
 
 if __name__ == "__main__":

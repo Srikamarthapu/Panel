@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Check, ExternalLink, Pencil, Plus, Square, Trash2, X } from "lucide-react";
 import { emptyWorkspaceTabState, normalizeWorkspaceTabState, workspaceActionPrompt } from "@/lib/workspace-tab-view-state.js";
+import { startAdaptivePolling } from "@/lib/adaptive-poll.js";
 import { useWorkSessions } from "@/components/work/WorkSessionProvider.jsx";
 import styles from "./WorkspaceTabView.module.css";
 
@@ -107,14 +108,14 @@ export default function WorkspaceTabView({ id, preview = false, embedded = false
   const [loading, setLoading] = useState(true), [error, setError] = useState(""), [review, setReview] = useState(null);
 
   useEffect(() => () => {
-    clearTimeout(pollTimer.current); pollController.current?.abort(); saveQueue.current.generation += 1;
+    pollTimer.current?.stop?.(); pollController.current?.abort(); saveQueue.current.generation += 1;
   }, []);
   useEffect(() => {
     const controller = new AbortController();
     saveQueue.current.generation += 1;
     const generation = saveQueue.current.generation;
     setLoading(true); setError(""); setDetails(null); setSpec(null); setStateReady(false); setExecutionRun(null);
-    clearTimeout(pollTimer.current); pollController.current?.abort(); activeAsk.current = null; setReview(null);
+    pollTimer.current?.stop?.(); pollController.current?.abort(); activeAsk.current = null; setReview(null);
     Promise.all([
       requestJson(`/api/workspace-tabs/${encodeURIComponent(id)}`, { signal: controller.signal }),
       requestJson(`/api/workspace-tabs/${encodeURIComponent(id)}/artifact?preview=${preview ? "true" : "false"}`, { signal: controller.signal }),
@@ -162,43 +163,43 @@ export default function WorkspaceTabView({ id, preview = false, embedded = false
   useEffect(() => {
     const sessionId = details?.tab?.executionSessionId;
     if (!sessionId) return;
-    let stopped = false, timer;
-    const read = async () => {
-      try {
+    let stopped = false, polling;
+    polling = startAdaptivePolling({
+      baseDelay: 1500,
+      maxDelay: 24000,
+      poll: async () => {
         const data = await requestJson(`/api/voice/runs?sessionId=${encodeURIComponent(sessionId)}`);
-        if (!stopped) setExecutionRun(data.run || null);
-        if (!stopped && data.run && !TERMINAL_STATES.has(data.run.state)) timer = setTimeout(read, 1500);
-      } catch { /* Main tab stays usable; reviewed actions report their own errors. */ }
-    };
-    void read();
-    return () => { stopped = true; clearTimeout(timer); };
+        if (stopped) return;
+        setExecutionRun(data.run || null);
+        if (!data.run || TERMINAL_STATES.has(data.run.state)) polling.stop();
+      },
+      onError: () => { /* Main tab stays usable while status monitoring retries. */ },
+    });
+    return () => { stopped = true; polling.stop(); };
   }, [details]);
 
   const closeReview = useCallback(() => { activeAsk.current = null; setReview(null); }, []);
   const finishRun = useCallback(run => { setExecutionRun(run); activeAsk.current = null; setReview(run.state === "complete" ? null : previous => ({ ...previous, phase: "error", error: run.error || "Hermes did not complete this request." })); }, []);
   const pollRun = useCallback((requestId, sessionId) => {
-    clearTimeout(pollTimer.current); pollController.current?.abort();
+    pollTimer.current?.stop?.(); pollController.current?.abort();
     const controller = new AbortController(); pollController.current = controller;
     const check = async () => {
       if (controller.signal.aborted || activeAsk.current?.requestId !== requestId) return;
-      try {
-        const data = await requestJson(`/api/voice/runs?sessionId=${encodeURIComponent(sessionId)}&actionId=${encodeURIComponent(requestId)}`, { signal: controller.signal });
-        const run = data.run;
-        if (run && TERMINAL_STATES.has(run.state)) { finishRun(run); return; }
-        setExecutionRun(run || null);
-        setReview(previous => previous ? { ...previous, phase: run?.permission ? "permission" : "running", statusLabel: run?.permission ? "Needs permission" : run?.statusLabel || (run?.state === "queued" ? "Waiting to start…" : "Hermes is working…"), error: previous.error?.startsWith("Could not stop") ? previous.error : "" } : previous);
-      } catch (failure) {
-        if (controller.signal.aborted) return;
-        setReview(previous => previous ? { ...previous, phase: "running", error: `Could not refresh this request: ${failure.message}. Monitoring will retry.` } : previous);
-        pollTimer.current = setTimeout(check, 1500); return;
-      }
-      pollTimer.current = setTimeout(check, 1000);
+      const data = await requestJson(`/api/voice/runs?sessionId=${encodeURIComponent(sessionId)}&actionId=${encodeURIComponent(requestId)}`, { signal: controller.signal });
+      if (controller.signal.aborted || pollController.current !== controller || activeAsk.current?.requestId !== requestId) return;
+      const run = data.run;
+      if (run && TERMINAL_STATES.has(run.state)) { pollTimer.current?.stop?.(); finishRun(run); return; }
+      setExecutionRun(run || null);
+      setReview(previous => previous ? { ...previous, phase: run?.permission ? "permission" : "running", statusLabel: run?.permission ? "Needs permission" : run?.statusLabel || (run?.state === "queued" ? "Waiting to start…" : "Hermes is working…"), error: previous.error?.startsWith("Could not stop") ? previous.error : "" } : previous);
     };
-    void check();
+    pollTimer.current = startAdaptivePolling({ poll: check, baseDelay: 1000, maxDelay: 16000, onError: failure => {
+      if (!controller.signal.aborted) setReview(previous => previous ? { ...previous, phase: "running", error: `Could not refresh this request: ${failure.message}. Monitoring will retry.` } : previous);
+    } });
   }, [finishRun]);
 
   const proposeAction = (block, trigger) => {
     const text = workspaceActionPrompt(spec, state, block.prompt);
+    if (text === null) { setSaveStatus("The assembled Hermes request contains hidden or unsafe characters. Remove them before reviewing it."); return; }
     if (!text || text.length > MAX_ASK_LENGTH) { setSaveStatus(text ? "The assembled Hermes request is too long." : "Fill in the tab before running this action."); return; }
     trigger?.focus(); activeAsk.current = { text }; setReview({ phase: "review", text, statusLabel: "", error: "" });
   };
@@ -213,7 +214,7 @@ export default function WorkspaceTabView({ id, preview = false, embedded = false
   const stopRun = useCallback(async () => {
     const request = activeAsk.current, sessionId = details?.tab?.executionSessionId;
     if (!request?.requestId || !sessionId) { closeReview(); return; }
-    setReview(previous => ({ ...previous, phase: "stopping", error: "" })); clearTimeout(pollTimer.current); pollController.current?.abort();
+    setReview(previous => ({ ...previous, phase: "stopping", error: "" })); pollTimer.current?.stop?.(); pollController.current?.abort();
     try { const data = await requestJson("/api/voice/runs", { method: "DELETE", body: JSON.stringify({ sessionId, actionId: request.requestId }) }); setExecutionRun(data.run || null); closeReview(); }
     catch (failure) { setReview(previous => ({ ...previous, phase: "running", error: `Could not stop this request: ${failure.message}` })); pollRun(request.requestId, sessionId); }
   }, [closeReview, details, pollRun]);

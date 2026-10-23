@@ -1,6 +1,6 @@
 // Public API fixtures: histories live here, outside the page, so a reload must
 // hydrate the server response instead of succeeding through legacy storage.
-export async function mockWorkspace(page, { sessions = [{ id: "qa-main", name: "QA session" }], tasks = [], agents = [], delegations = [] } = {}) {
+export async function mockWorkspace(page, { sessions = [{ id: "qa-main", name: "QA session" }], tasks = [], agents = [], delegations = [], agentCapabilities, memory, directConfig } = {}) {
   await page.route("**/api/onboarding", route => route.fulfill({ json: { needsOnboarding: false, decision: { version: 1, outcome: "existing-user", updatedAt: "2026-10-07T00:00:00.000Z" }, existingEvidence: ["saved-sessions"], hermes: { installed: true, configured: true }, storage: { panelData: "/QA/panel-data", hermesHome: "/QA/hermes-home" } } }));
   await page.route("**/api/workspace-tabs**", route => route.fulfill({ json: { tabs: [] } }));
   const timestamp = new Date().toISOString();
@@ -15,7 +15,7 @@ export async function mockWorkspace(page, { sessions = [{ id: "qa-main", name: "
     workingDirectory: `/QA/agents/${agent.id}/workspace`, storagePath: `/QA/agents/${agent.id}`, soulPath: `/QA/agents/${agent.id}/SOUL.md`, workspacePath: `/QA/agents/${agent.id}/workspace`, ...agent,
   }]));
   const delegated = delegations.map(agent => ({ ...agent }));
-  const requests = { createdSessions: [], sessionPatches: [], queuedTasks: [], cancellations: [], adoptedSessions: [], stoppedRuns: [], createdAgents: [], updatedAgents: [], agentRuns: [], stoppedDelegations: [] };
+  const requests = { createdSessions: [], sessionPatches: [], queuedTasks: [], cancellations: [], adoptedSessions: [], stoppedRuns: [], createdAgents: [], updatedAgents: [], agentRuns: [], stoppedDelegations: [], modelResolutionPatches: [] };
   let nextId = 0;
   for (const agent of agentProfiles.values()) if (!records.has(agent.sessionId)) {
     const session = { id: agent.sessionId, name: agent.name, workingDirectory: agent.workingDirectory, agentId: agent.id, pinned: false, archivedAt: agent.archivedAt || null, createdAt: agent.createdAt, updatedAt: agent.updatedAt };
@@ -96,7 +96,7 @@ export async function mockWorkspace(page, { sessions = [{ id: "qa-main", name: "
       if (previous) return route.fulfill({ status: 201, json: { agent: { ...previous, soul: previous.soul } } });
       const sessionId = `qa-agent-session-${++nextId}`;
       const workingDirectory = body.workingDirectory || `/QA/agents/${id}/workspace`;
-      const profile = { id, name: body.name, color: body.color || "sage", soul: body.soul || `# ${body.name}\n\nYou are ${body.name}.`, provider: body.provider || "", model: body.model || "", workingDirectory, storagePath: `/QA/agents/${id}`, soulPath: `/QA/agents/${id}/SOUL.md`, workspacePath: workingDirectory, sessionId, createdAt: timestamp, updatedAt: timestamp, archivedAt: null };
+      const profile = { id, name: body.name, color: body.color || "sage", soul: body.soul || `# ${body.name}\n\nYou are ${body.name}.`, provider: body.provider || "", model: body.model || "", capabilityPolicy: body.capabilityPolicy ?? null, workingDirectory, storagePath: `/QA/agents/${id}`, soulPath: `/QA/agents/${id}/SOUL.md`, workspacePath: workingDirectory, sessionId, createdAt: timestamp, updatedAt: timestamp, archivedAt: null };
       agentProfiles.set(id, profile);
       const session = { id: sessionId, name: body.name, workingDirectory, agentId: id, pinned: false, archivedAt: null, createdAt: timestamp, updatedAt: timestamp };
       records.set(sessionId, { session, messages: [], activeRun: null, lastRun: null });
@@ -155,6 +155,50 @@ export async function mockWorkspace(page, { sessions = [{ id: "qa-main", name: "
     }
     return route.fulfill({ status: 405, json: { error: "Unsupported agent request." } });
   });
+  await page.route("**/api/agents/capabilities", route => route.fulfill({ json: agentCapabilities || {
+    version: 1,
+    tools: [
+      { id: "web_search", name: "Web search", group: "Research", description: "Search the public web.", available: true },
+      { id: "read_file", name: "Read files", group: "Files and code", description: "Read files available to Hermes.", available: true },
+    ],
+    skills: [{ id: "qa-research", name: "qa-research", group: "General", description: "Check primary sources.", available: true }],
+    notes: {
+      inherited: "Older profiles inherit workspace access.", empty: "Empty means none.",
+      workingDirectory: "A working folder is not a filesystem sandbox.",
+      skillBoundary: "Allowed file or terminal tools may still read skill files.",
+      delegation: "Restricted teammates cannot delegate.",
+      runtime: "Explicit allowlists require persistent Hermes; legacy and scheduled launches are blocked.",
+    },
+  } }));
+  await page.route("**/api/direct/config", route => route.fulfill({ json: { config: directConfig || { executionMode: "hermes", provider: "", model: "", providers: [], ready: false } } }));
+  const modelPreferences = { version: 1, migration: "qa-fixture", chat: { mode: "follow-main", provider: "", model: "", reasoningEffort: "" }, talk: { mode: "follow-main", provider: "", model: "", reasoningEffort: "" } };
+  const resolvedModel = (surface, sessionId = "") => {
+    const direct = directConfig?.executionMode === "direct" && directConfig?.provider && directConfig?.model;
+    const session = records.get(sessionId)?.session;
+    const agent = session?.agentId ? agentProfiles.get(session.agentId) : null;
+    const preference = modelPreferences[surface];
+    const pinned = preference.mode === "pin" && preference.model;
+    const agentPinned = Boolean(agent?.provider || agent?.model);
+    const provider = agentPinned ? agent.provider : direct ? directConfig.provider : pinned ? preference.provider : "test";
+    const model = agentPinned ? agent.model : direct ? directConfig.model : pinned ? preference.model : "test-model";
+    return { surface, executionMode: direct ? "direct" : "hermes", requestedProvider: provider, requestedModel: model, friendlyName: model, label: model, origin: agentPinned ? "agent" : direct ? "direct" : pinned ? "surface" : "main", originLabel: agentPinned ? `${agent.name}'s model` : direct ? "Direct API" : pinned ? `Pinned for ${surface === "chat" ? "Chat" : "Talk"}` : "Main model", reasoningEffort: preference.reasoningEffort || "", followsMain: !agentPinned && !direct && !pinned };
+  };
+  await page.route("**/api/models/resolution**", route => {
+    const request = route.request();
+    if (request.method() === "PATCH") {
+      const body = request.postDataJSON();
+      requests.modelResolutionPatches.push(body);
+      if (directConfig?.executionMode === "direct") return route.fulfill({ status: 409, json: { error: "Direct API settings control this route." } });
+      if (body.surface === "chat" || body.surface === "talk") modelPreferences[body.surface] = body.mode === "pin"
+        ? { mode: "pin", provider: body.provider, model: body.model, reasoningEffort: body.reasoningEffort || "" }
+        : { mode: "follow-main", provider: "", model: "", reasoningEffort: "" };
+      return route.fulfill({ json: { resolution: resolvedModel(body.surface, body.sessionId), preferences: modelPreferences } });
+    }
+    const url = new URL(request.url());
+    const surface = url.searchParams.get("surface") === "talk" ? "talk" : "chat";
+    return route.fulfill({ json: { resolution: resolvedModel(surface, url.searchParams.get("sessionId") || ""), preferences: modelPreferences } });
+  });
+  if (memory) await page.route("**/api/memory", route => route.fulfill({ json: memory }));
   await page.route("**/api/capabilities", route => route.fulfill({ json: {
     skills: [{ id: "qa-research", name: "Research notebook", description: "Check primary sources and preserve evidence.", source: "user", category: "research" }, { id: "qa-review", name: "Patch review", description: "Review changes before release.", source: "repository", category: "engineering" }],
     plugins: [{ id: "qa-search", name: "Search connector", description: "Search workspace documents.", source: "user", version: "2.4.0", status: "enabled" }],

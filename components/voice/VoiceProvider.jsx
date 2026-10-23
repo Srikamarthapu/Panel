@@ -21,21 +21,21 @@ import {
 import { usePathname } from "next/navigation";
 import { useReducedMotion } from "motion/react";
 import { completionRunId, isTextCompletion, voiceChatRequest } from "./voiceTransport.js";
-import { queuedVoiceReducer } from "./voiceEffects.js";
+import { isMicrophoneGenerationEffect, queuedVoiceReducer } from "./voiceEffects.js";
 import { createPushToTalkGesture, subscribeNativeVoiceEvent } from "./voiceLifecycle.js";
 import { MAX_USER_TEXT, spokenExcerpt } from "@/lib/conversation-limits.js";
 import {
   initialWrapper,
   selectSpeakableCompletion,
-  canSpeakCompletionNow,
+  canHandleCompletionNow,
   isStaleBundle,
   canReloadNow,
 } from "./voiceMachine.js";
 import { normalizeTranscriptEntries } from "@/lib/publicReply.js";
 import {
   isLiveAudioStream,
+  microphoneConstraints,
   createVoiceRecorder,
-  deriveVadThresholds,
   recorderFileName,
   VoiceCaptureTimeoutError,
   withCaptureTimeout,
@@ -44,7 +44,7 @@ import { createContinuousSpeechDetector, preloadContinuousSpeechDetector, pcm16k
 import { createNativeToolVoiceFeedbackSelector, isActiveToolProgress, selectEarlyVoiceFeedback, selectProgressVoiceFeedback } from "./voiceFeedback.js";
 import { canStreamVoiceFeedback, createVoiceFeedbackHandoff, persistVoiceFeedback, playVoiceFeedbackAudio, prepareVoiceFeedbackAudio, streamVoiceFeedback } from "./voiceFeedbackPlayback.js";
 import { createVoiceSessionId, resolveVoiceSessionId, voicePendingRunsKey } from "./voiceSession.js";
-import { createAnswerAudioTiming, createAnswerSpeechBuffer, readAnswerEvents } from "./voiceAnswerStream.js";
+import { createAnswerAudioTiming, createAnswerReconnectBackoff, createAnswerSpeechBuffer, readAnswerEvents } from "./voiceAnswerStream.js";
 import { canAcceptVoiceCapture, conversationModeForPathname, resolveTextOnlyMode, shouldSuppressVoiceOutput } from "./voiceResponseMode.js";
 
 export const VoiceContext = createContext(null);
@@ -55,38 +55,7 @@ export function useVoice() {
 
 // ---------- constants ----------
 
-// VAD parameters — FALLBACK DEFAULTS ONLY.
-//
-// These are the static floors used before calibration completes and whenever
-// calibration can't run (no analyser, teardown race). At mic start we sample
-// ~600ms of ambient RMS and derive per-environment thresholds from the
-// measured noise floor (see deriveVadThresholds + adaptiveThresholdsRef); the
-// static values below are the safety net.
-//
-// History: the old silence floor (0.008 ≈ -42 dB) sat ABOVE the quiet parts of
-// normal speech, so the 1s timer fired mid-sentence and every capture died at
-// ~1.3s ("There." bug, 2026-07-04). Adaptive calibration removes the guesswork:
-// the silence floor is pinned to the actual room, not a hardcoded dB level.
-const VAD_SPEECH_THRESHOLD = 0.012;   // onset fallback: ~-38 dB
-const VAD_SILENCE_THRESHOLD = 0.004;  // sustain fallback: ~-48 dB
 const VAD_MIN_UTTERANCE_MS = 250;
-const VAD_SILENCE_TIMEOUT_MS = 1600;  // humans pause >1s mid-sentence; don't amputate
-// Safety valve: if VAD silence detection fails to fire (background noise,
-// threshold issues, WebKit quirks), force-stop after this many ms.
-const VAD_MAX_CAPTURE_MS = 30000;
-
-// Adaptive-VAD calibration parameters.
-// We sample ambient RMS for ~600ms (12 ticks at the 50ms VAD interval), take
-// the median (robust to a stray transient). Both thresholds remain above that
-// measured floor, including in a noisy room, so background sound cannot pin a
-// recording open until the hard safety timeout.
-const VAD_CALIBRATION_MS = 600;
-
-// Failure surface: if the mic is live in a listening state but VAD never
-// onsets within this window, publish a diagnostic to the activity feed so a
-// dead client / mis-calibrated threshold is visible instead of a silent
-// "Listening." forever.
-const VAD_NO_ONSET_TIMEOUT_MS = 20000;
 
 // Voice_Pipeline reliability constants per design.md.
 const TTS_TIMEOUT_MS = 15000;
@@ -143,7 +112,7 @@ function announceVoiceActivity(event) {
 
 // Managed sessions are immutable for a mount: the parent keys this provider by
 // sessionId so switching also tears down every old audio/request resource.
-export default function VoiceProvider({ children, testRuntime = null, sessionId = null, initialTranscript = [], initialActiveRun = null }) {
+export default function VoiceProvider({ children, testRuntime = null, sessionId = null, initialTranscript = [], serverTranscript = null, initialActiveRun = null }) {
   const managedSessionRef = useRef(typeof sessionId === "string" && sessionId.trim() ? sessionId.trim() : null);
   const initialTranscriptRef = useRef(initialTranscript);
   const initialActiveRunRef = useRef(initialActiveRun);
@@ -176,6 +145,10 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     dispatch({ type: "HYDRATE_TRANSCRIPT", entries: stored });
   }, []);
   useEffect(() => {
+    if (!managedSessionRef.current || !Array.isArray(serverTranscript)) return;
+    dispatch({ type: "RECONCILE_SERVER_TRANSCRIPT", entries: serverTranscript });
+  }, [serverTranscript]);
+  useEffect(() => {
     if (managedSessionRef.current) return; // Server history owns managed sessions.
     if (!wrapper.state.transcriptHydrated || typeof window === "undefined") return;
     try {
@@ -192,6 +165,9 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
   conversationModeRef.current = conversationMode;
   const previousConversationModeRef = useRef(conversationMode);
   const voiceInputGenerationRef = useRef(0);
+  // Device changes invalidate microphone acquisition without invalidating
+  // submitted STT, accepted chat work, or reply playback.
+  const microphoneAcquisitionGenerationRef = useRef(0);
   const [serverStatus, setServerStatus] = useState("checking");
   // CHAT_PENDING is optimistic. Detaching a session is safe only after the
   // server has acknowledged this exact immutable run id.
@@ -225,45 +201,34 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
   // attempts. micTrackHandledRef marks the currently-attached track's ended
   // handler so we don't double-attach across ensure calls.
   const micRecoveringRef = useRef(false);
+  const invalidateMicrophoneInputRef = useRef(null);
   const handledTrackIdsRef = useRef(new Set());
   const mediaRecorderRef = useRef(null);
   const recorderStopRef = useRef(null);
   const audioChunksRef = useRef([]);
   const audioContextRef = useRef(null);
-  const audioInputSourceRef = useRef(null);
-  const analyserRef = useRef(null);
-  const vadIntervalRef = useRef(null);
   const speechDetectorRef = useRef(null);
   const speechDetectorPromiseRef = useRef(null);
+  const speechDetectorReadinessRef = useRef(null);
   const speechDetectorReadyTimerRef = useRef(null);
   const speechDetectorSignalTimerRef = useRef(null);
   const speechDetectorGenerationRef = useRef(0);
   const speechDetectorControlRef = useRef(Promise.resolve());
   const captureSourceRef = useRef(null);
+  const captureSubmissionCommittedRef = useRef(false);
   const pttGestureRef = useRef(null);
   if (!pttGestureRef.current) pttGestureRef.current = createPushToTalkGesture();
+  // React publishes reducer state after the initiating callback. Keep a
+  // synchronous ownership bit so a completion continuation in that small gap
+  // cannot mistake the previous idle render for permission to speak.
+  const completionInputOwnershipRef = useRef(false);
+  if (["starting", "capturing", "transcribing"].includes(wrapper.state.state)) {
+    completionInputOwnershipRef.current = true;
+  } else if (!pttGestureRef.current.isHeld() && !captureSubmissionCommittedRef.current) {
+    completionInputOwnershipRef.current = false;
+  }
   const toggleContinuousRef = useRef(null);
   const speechStartedAtRef = useRef(0);
-  const lastVoiceAtRef = useRef(0);
-  // Adaptive-VAD state. `thresholds` holds the live silence/speech floors used
-  // by tickVAD; it starts at the static fallbacks and is overwritten once the
-  // noise-floor calibration completes. `calibrationSamples` accumulates ambient
-  // RMS during the calibration window; `calibrating` / `calibrationEndsAt`
-  // gate that window. `micLiveSince` and `noOnsetWarned` drive the "mic live
-  // but never onsets" failure surface.
-  const adaptiveThresholdsRef = useRef({
-    silence: VAD_SILENCE_THRESHOLD,
-    speech: VAD_SPEECH_THRESHOLD,
-  });
-  const calibrationSamplesRef = useRef([]);
-  const calibratingRef = useRef(false);
-  const calibrationEndsAtRef = useRef(0);
-  const micLiveSinceRef = useRef(0);
-  const noOnsetWarnedRef = useRef(false);
-  // Last voice state tickVAD observed, so we can restart the no-onset watchdog
-  // each time we RE-enter "listening" (continuous mode reuses one analyser
-  // across turns, so ensureMicAndVad's reset only fires on the first turn).
-  const prevVadStateRef = useRef("idle");
   const discardOnStopRef = useRef(false);
   const latestBlobRef = useRef(null);
   const currentTtsRef = useRef(null);
@@ -334,6 +299,10 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
   // Map of pending run actionId -> epoch enqueued. Non-empty means a detached
   // run is in flight for this session, which speeds up the completion poll.
   const pendingRunsRef = useRef(new Map());
+  // Terminal runs may remain alive briefly while a requested stop or late tool
+  // receipt is reconciled. Keep their visible transcript outcome fresh until
+  // the runtime reports execution inactive.
+  const pendingOutcomeRefreshRef = useRef(new Map());
   const textRunIdsRef = useRef(new Set());
   const cancelledRunIdsRef = useRef(new Set());
   const completionWakeRef = useRef(null);
@@ -464,7 +433,10 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     setRuntimeError("");
     const request = runtimeFetch("/api/voice/runtime", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: sessionIdRef.current }),
+      body: JSON.stringify({
+        sessionId: sessionIdRef.current,
+        surface: conversationModeRef.current === "talk" ? "talk" : "chat",
+      }),
       signal: AbortSignal.timeout(60000),
     }).then(async (response) => {
       const result = await response.json().catch(() => ({}));
@@ -486,9 +458,10 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
   }, [runtimeFetch]);
 
   const observeRun = useCallback((run) => {
-    if (!run?.id || !pendingRunsRef.current.has(run.id) || cancelledRunIdsRef.current.has(run.id)) return;
+    if (!run?.id || !pendingRunsRef.current.has(run.id) || cancelledRunIdsRef.current.has(run.id)) return false;
     const previous = streamedRunsRef.current.get(run.id);
-    if (previous?.updatedAt && run.updatedAt && Date.parse(previous.updatedAt) > Date.parse(run.updatedAt)) return;
+    if (previous?.updatedAt && run.updatedAt && Date.parse(previous.updatedAt) > Date.parse(run.updatedAt)) return false;
+    if (previous && JSON.stringify(previous) === JSON.stringify(run)) return false;
     streamedRunsRef.current.set(run.id, run);
     const feedback = voiceFeedbackRef.current;
     if (feedback?.runId === run.id) {
@@ -500,6 +473,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     if (run.statusLabel) dispatch({ type: "REQUEST_PROGRESS", label: run.statusLabel });
     playToolProgressRef.current?.(run);
     if (["complete", "error", "cancelled", "interrupted"].includes(run.state)) completionWakeRef.current?.();
+    return true;
   }, []);
 
   const startAnswerStream = useCallback((actionId, textOnly = false) => {
@@ -510,17 +484,27 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     answerStreamsRef.current.set(actionId, entry);
     const current = () => !controller.signal.aborted && answerStreamsRef.current.get(actionId) === entry && pendingRunsRef.current.has(actionId) && !cancelledRunIdsRef.current.has(actionId);
     void (async () => {
-      let attempts = 0;
+      const reconnectBackoff = createAnswerReconnectBackoff();
       while (current()) {
+        let meaningful = false;
         try {
           const response = await runtimeFetch(`/api/voice/runs/${encodeURIComponent(actionId)}/events?sessionId=${encodeURIComponent(sessionIdRef.current)}&after=${buffer.sequence}`, { cache: "no-store", signal: controller.signal });
           if (!current()) { await response.body?.cancel(); break; }
           const supported = await readAnswerEvents(response, (type, event) => {
             if (!current()) return;
-            if (type === "run") { observeRun(event); return; }
+            if (type === "run") {
+              const changed = observeRun(event);
+              meaningful = changed || meaningful;
+              return;
+            }
             if (event.runId !== actionId) return;
-            const result = buffer.accept(event);
+            const holdSpeech = !canHandleCompletionNow(wrapperRef.current.state, {
+              actionId,
+              textOnly: shouldSuppressVoiceOutput(conversationModeRef.current, textOnly),
+            }, { inputOwned: completionInputOwnershipRef.current });
+            const result = buffer.accept(event, { holdSpeech });
             if (!result) return;
+            meaningful = true;
             retireVoiceFeedbackRef.current?.();
             dispatch({ type: "STREAM_TEXT", actionId, text: result.text });
             dispatch({
@@ -531,13 +515,12 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
             });
           }, controller.signal);
           if (!supported || ["complete", "error", "cancelled", "interrupted"].includes(streamedRunsRef.current.get(actionId)?.state)) break;
-          attempts = 0;
         } catch {
           if (!current()) break;
         }
         // Polling remains the durable fallback. Reconnect only reads events;
         // it never resubmits a prompt or repeats an action.
-        const delay = Math.min(5000, 500 * 2 ** attempts++);
+        const delay = reconnectBackoff.next({ meaningful });
         await new Promise((resolve) => {
           const done = () => { clearTimeout(timer); controller.signal.removeEventListener("abort", done); resolve(); };
           const timer = setTimeout(done, delay);
@@ -607,9 +590,10 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     const mediaDevices = runtimeMediaDevices();
     if (!mediaDevices?.getUserMedia) throw new Error("Microphone unavailable");
     const generation = voiceInputGenerationRef.current;
+    const microphoneGeneration = microphoneAcquisitionGenerationRef.current;
     if (conversationModeRef.current === "chat") throw new DOMException("Voice capture is unavailable in Chat", "AbortError");
     const raw = Promise.resolve(mediaDevices.getUserMedia(constraints)).then((stream) => {
-      if (epoch !== operationEpochRef.current || !canAcceptVoiceCapture({
+      if (microphoneGeneration !== microphoneAcquisitionGenerationRef.current || epoch !== operationEpochRef.current || !canAcceptVoiceCapture({
         startedGeneration: generation,
         currentGeneration: voiceInputGenerationRef.current,
         conversationMode: conversationModeRef.current,
@@ -629,6 +613,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
   const requestPermission = useCallback(async () => {
     const epoch = operationEpochRef.current;
     const generation = voiceInputGenerationRef.current;
+    const microphoneGeneration = microphoneAcquisitionGenerationRef.current;
     const signal = operationAbortRef.current.signal;
     const mediaDevices = runtimeMediaDevices();
     if (!mediaDevices?.getUserMedia) {
@@ -657,9 +642,9 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       } else if (pendingStreamPromiseRef.current) {
         stream = await awaitCaptureOperation(pendingStreamPromiseRef.current, signal);
       } else {
-        stream = await acquireMediaStream({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }, epoch, signal);
+        stream = await acquireMediaStream(microphoneConstraints(wrapperRef.current.state.config?.micDeviceId), epoch, signal);
       }
-      if (epoch !== operationEpochRef.current || !canAcceptVoiceCapture({
+      if (microphoneGeneration !== microphoneAcquisitionGenerationRef.current || epoch !== operationEpochRef.current || !canAcceptVoiceCapture({
         startedGeneration: generation,
         currentGeneration: voiceInputGenerationRef.current,
         conversationMode: conversationModeRef.current,
@@ -668,7 +653,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       mediaStreamRef.current = stream;
       dispatch({ type: "SET_PERMISSION", value: "granted" });
     } catch (err) {
-      if (epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted) return;
+      if (microphoneGeneration !== microphoneAcquisitionGenerationRef.current || epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted) return;
       if (err instanceof VoiceCaptureTimeoutError) {
         operationEpochRef.current += 1;
         pendingStreamPromiseRef.current = null;
@@ -686,122 +671,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
 
   // ---------- mic + VAD lifecycle ----------
 
-  const tickVAD = useCallback(() => {
-    if (!analyserRef.current) return;
-    const view = wrapperRef.current.state;
-    const buf = new Uint8Array(analyserRef.current.fftSize);
-    analyserRef.current.getByteTimeDomainData(buf);
-    let sum = 0;
-    for (let i = 0; i < buf.length; i++) {
-      const v = (buf[i] - 128) / 128;
-      sum += v * v;
-    }
-    const rms = Math.sqrt(sum / buf.length);
-    const now = performance.now();
-
-    // ---- Adaptive-VAD calibration window ----
-    // For the first ~600ms after the analyser comes up we ONLY sample ambient
-    // RMS; we deliberately do not onset/barge-in during this window so a noise
-    // spike at mic start can't false-trigger before the room floor is known.
-    if (calibratingRef.current) {
-      calibrationSamplesRef.current.push(rms);
-      if (now >= calibrationEndsAtRef.current) {
-        const samples = calibrationSamplesRef.current
-          .slice()
-          .sort((a, b) => a - b);
-        // Median is robust to a single transient during calibration.
-        const noiseFloor =
-          samples.length > 0
-            ? samples[Math.floor(samples.length / 2)]
-            : VAD_SILENCE_THRESHOLD;
-        const { silence, speech, noisy } = deriveVadThresholds(noiseFloor);
-        adaptiveThresholdsRef.current = { silence, speech };
-        calibratingRef.current = false;
-        calibrationSamplesRef.current = [];
-        publishVoiceActivity({
-          kind: noisy ? "warn" : "info",
-          state: "listening",
-          title: noisy ? "Background noise is high" : "Voice calibrated",
-          summary: `noise floor ${noiseFloor.toFixed(4)} → onset ${speech.toFixed(
-            4
-          )}, sustain ${silence.toFixed(4)}`,
-          source: "voice/vad",
-        });
-        if (wrapperRef.current.state.state === "starting" && wrapperRef.current.state.continuousRequested && !wrapperRef.current.state.pttRequested) dispatch({ type: "MIC_READY" });
-      }
-      return;
-    }
-
-    const { silence: silenceThreshold, speech: speechThreshold } =
-      adaptiveThresholdsRef.current;
-
-    // Restart the no-onset watchdog each time we newly enter "listening"
-    // (e.g. after a turn completes in continuous mode). Without this the clock
-    // would only ever measure from the very first mic-live moment.
-    if (view.state === "listening" && prevVadStateRef.current !== "listening") {
-      micLiveSinceRef.current = now;
-      noOnsetWarnedRef.current = false;
-    }
-    prevVadStateRef.current = view.state;
-
-    // Speaker output cannot be distinguished reliably from speech using RMS.
-    // Never let Hermes interrupt itself. The explicit interrupt/PTT control
-    // stops playback; a short quiet gap prevents its tail from starting a turn.
-    if (view.state === "speaking" || now - playbackEndedAtRef.current < 450) return;
-    if (view.state === "listening" && rms > speechThreshold) {
-      noOnsetWarnedRef.current = false;
-      dispatch({ type: "VAD_ONSET" });
-      lastVoiceAtRef.current = now;
-      return;
-    }
-    // Failure surface: mic is live and we're waiting to hear the user, but no
-    // onset has fired for a long time. Publish ONCE so a dead/disconnected
-    // client or a mis-calibrated threshold is visible instead of a silent
-    // "Listening." forever. (Fires only in continuous listening; PTT starts in
-    // "capturing" directly.)
-    if (
-      view.state === "listening" &&
-      micLiveSinceRef.current &&
-      !noOnsetWarnedRef.current &&
-      now - micLiveSinceRef.current > VAD_NO_ONSET_TIMEOUT_MS
-    ) {
-      noOnsetWarnedRef.current = true;
-      publishVoiceActivity({
-        kind: "warn",
-        state: "listening",
-        title: "No speech detected",
-        summary: `Mic live ${Math.round(
-          (now - micLiveSinceRef.current) / 1000
-        )}s with no onset (rms ${rms.toFixed(4)} < onset ${speechThreshold.toFixed(
-          4
-        )}). Client may be disconnected or the room too quiet.`,
-        source: "voice/vad",
-      });
-    }
-    if (view.state === "capturing") {
-      if (rms > silenceThreshold) {
-        lastVoiceAtRef.current = now;
-      } else if (
-        lastVoiceAtRef.current &&
-        now - lastVoiceAtRef.current > VAD_SILENCE_TIMEOUT_MS &&
-        wrapperRef.current.state.continuousRequested
-      ) {
-        // End-of-utterance detection only applies to continuous mode; PTT is
-        // ended explicitly by STOP_PTT from key/pointer release.
-        dispatch({ type: "STOP_PTT" });
-      }
-      // Safety valve: force-stop if we've been capturing too long (VAD
-      // silence detection may be stuck due to background noise / thresholds).
-      if (
-        speechStartedAtRef.current &&
-        now - speechStartedAtRef.current > VAD_MAX_CAPTURE_MS
-      ) {
-        dispatch({ type: "STOP_PTT" });
-      }
-    }
-  }, [publishVoiceActivity]);
-
-  const ensureContinuousSpeechDetector = useCallback(async (epoch, signal) => {
+  const ensureContinuousSpeechDetector = useCallback(async (epoch, signal, { preserveSubmittedWork = false } = {}) => {
     if (speechDetectorRef.current) {
       const detector = speechDetectorRef.current;
       const resume = speechDetectorControlRef.current.catch(() => {}).then(async () => {
@@ -810,6 +680,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       });
       speechDetectorControlRef.current = resume;
       await awaitCaptureOperation(resume, signal, 5000);
+      if (speechDetectorRef.current !== detector) return null;
       if (wrapperRef.current.state.state === "starting" && wrapperRef.current.state.continuousRequested) dispatch({ type: "MIC_READY" });
       return detector;
     }
@@ -824,6 +695,9 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     const detectorStartedAt = Date.now();
     const generation = speechDetectorGenerationRef.current + 1;
     speechDetectorGenerationRef.current = generation;
+    let resolveReadiness;
+    const readiness = { generation, promise: new Promise((resolve) => { resolveReadiness = resolve; }), resolve: (value) => resolveReadiness?.(value) };
+    speechDetectorReadinessRef.current = readiness;
     const rawDetectorPromise = runtimeSpeechDetector({
       audioContext,
       stream,
@@ -837,6 +711,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
         }
         if (ready || !status.inferred) return;
         ready = true;
+        readiness.resolve(true);
         publishVoiceActivity({ source: "voice/timing", title: "Speech detection ready", summary: `Detector initialization: ${Date.now() - detectorStartedAt}ms; Start conversation to ready: ${voiceStartupAtRef.current ? Date.now() - voiceStartupAtRef.current : Date.now() - detectorStartedAt}ms.` });
         if (speechDetectorReadyTimerRef.current) clearTimeout(speechDetectorReadyTimerRef.current);
         speechDetectorReadyTimerRef.current = null;
@@ -855,6 +730,8 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
         if (generation !== speechDetectorGenerationRef.current) return;
         if (captureSourceRef.current === "ptt") return;
         if (wrapperRef.current.state.state === "listening" && wrapperRef.current.state.continuousRequested) {
+          captureSubmissionCommittedRef.current = false;
+          completionInputOwnershipRef.current = true;
           captureSourceRef.current = "silero";
           dispatch({ type: "VAD_SPEECH_START" });
         }
@@ -864,7 +741,11 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
         const view = wrapperRef.current.state;
         if (view.state !== "capturing" || !view.continuousRequested || captureSourceRef.current !== "silero") return;
         captureSourceRef.current = null;
+        completionInputOwnershipRef.current = true;
         speechEndedAtRef.current = Date.now();
+        // Commit before dispatch: a device selection can arrive before React
+        // publishes VAD_SPEECH_END's transcribing state.
+        captureSubmissionCommittedRef.current = true;
         latestBlobRef.current = pcm16kToWavBlob(audio);
         dispatch({ type: "VAD_SPEECH_END" });
       },
@@ -877,8 +758,9 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       },
     });
     const detectorPromise = Promise.resolve(rawDetectorPromise).then(async (detector) => {
-      if (epoch !== operationEpochRef.current) {
+      if (epoch !== operationEpochRef.current || generation !== speechDetectorGenerationRef.current) {
         if (speechDetectorGenerationRef.current === generation) speechDetectorGenerationRef.current += 1;
+        readiness.resolve(false);
         await detector.destroy?.();
         throw new DOMException("Cancelled", "AbortError");
       }
@@ -887,7 +769,8 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     speechDetectorPromiseRef.current = detectorPromise;
     try {
       const detector = await awaitCaptureOperation(detectorPromise, signal, 12000);
-      if (epoch !== operationEpochRef.current) {
+      if (epoch !== operationEpochRef.current || generation !== speechDetectorGenerationRef.current) {
+        readiness.resolve(false);
         await detector.destroy?.();
         throw new DOMException("Cancelled", "AbortError");
       }
@@ -896,7 +779,8 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
         speechDetectorReadyTimerRef.current = setTimeout(() => {
           speechDetectorReadyTimerRef.current = null;
           if (ready || generation !== speechDetectorGenerationRef.current) return;
-          dispatch({ type: "CAPTURE_FAILED", stage: "microphone", code: "VAD_NO_FRAMES", error: "The speech detector started but received no microphone audio. Push to talk is still available.", retryable: true });
+          readiness.resolve(false);
+          dispatch({ type: preserveSubmittedWork ? "MIC_RECOVERY_FAILED" : "CAPTURE_FAILED", stage: "microphone", code: "VAD_NO_FRAMES", error: "The speech detector started but received no microphone audio. Push to talk is still available.", retryable: true });
         }, 5000);
       }
       return detector;
@@ -909,12 +793,12 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
   //
   // WebKit (Safari / WKWebView / Tauri on macOS) gates AudioContext activation
   // on a user gesture: an AudioContext created OUTSIDE the gesture call stack
-  // comes up `suspended` and its analyser never produces samples, and the
+  // comes up `suspended` and its speech detector never receives samples, and the
   // first getUserMedia() only "arms" the permission prompt. The old flow
   // created the context and called getUserMedia inside the async effect-runner
   // — a full React commit AFTER the click returned — so the FIRST press only
   // primed the stack and the SECOND press was the one that actually reached a
-  // live analyser. That is the "always press twice" bug.
+  // live detector. That is the "always press twice" bug.
   //
   // primeAudioStack() runs SYNCHRONOUSLY inside the click/pointerdown handler
   // (see VoiceDock → primeAudio in context). It (a) creates the AudioContext
@@ -926,6 +810,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     if (conversationModeRef.current === "chat") return;
     const epoch = operationEpochRef.current;
     const generation = voiceInputGenerationRef.current;
+    const microphoneGeneration = microphoneAcquisitionGenerationRef.current;
     if (typeof window === "undefined") return;
     // (a) Create + resume the AudioContext in-gesture. This is the load-bearing
     // WebKit step: a context created/resumed inside the gesture stack starts
@@ -938,7 +823,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       const ctx = audioContextRef.current;
       // resume() MUST be called from within the gesture handler. Calling it
       // later (in the effect-runner) is a no-op on WebKit — the context is
-      // already stuck suspended and the analyser reads silence forever.
+      // already stuck suspended and the detector sees silence forever.
       if (ctx && ctx.state === "suspended" && typeof ctx.resume === "function") {
         ctx.resume().catch(() => {});
       }
@@ -972,12 +857,12 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     ) {
       const cfg = wrapperRef.current?.state?.config;
       const deviceId = cfg?.micDeviceId;
-      const constraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, ...(deviceId ? { deviceId: { exact: deviceId } } : {}) } };
+      const constraints = microphoneConstraints(deviceId);
       try {
         const raw = runtimeMediaDevices()
           .getUserMedia(constraints)
           .then((stream) => {
-            if (epoch !== operationEpochRef.current || !canAcceptVoiceCapture({
+            if (microphoneGeneration !== microphoneAcquisitionGenerationRef.current || epoch !== operationEpochRef.current || !canAcceptVoiceCapture({
               startedGeneration: generation,
               currentGeneration: voiceInputGenerationRef.current,
               conversationMode: conversationModeRef.current,
@@ -999,11 +884,12 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     }
   }, [runtimeAudio, runtimeAudioContext, runtimeMediaDevices]);
 
-  const ensureMicAndVad = useCallback(async () => {
+  const ensureMicAndVad = useCallback(async ({ preserveSubmittedWork = false, awaitDetectorReady = false } = {}) => {
     const epoch = operationEpochRef.current;
     const generation = voiceInputGenerationRef.current;
+    const microphoneGeneration = microphoneAcquisitionGenerationRef.current;
     const signal = operationAbortRef.current.signal;
-    if (typeof window === "undefined" || conversationModeRef.current === "chat") return;
+    if (typeof window === "undefined" || conversationModeRef.current === "chat") return false;
     if (!isLiveAudioStream(mediaStreamRef.current)) {
       mediaStreamRef.current = null;
       const pending = pendingStreamPromiseRef.current;
@@ -1016,50 +902,50 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
         } else {
           const cfg = wrapperRef.current?.state?.config;
           const deviceId = cfg?.micDeviceId;
-          const constraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, ...(deviceId ? { deviceId: { exact: deviceId } } : {}) } };
+          const constraints = microphoneConstraints(deviceId);
           stream = await acquireMediaStream(constraints, epoch, signal);
         }
-        if (epoch !== operationEpochRef.current || !canAcceptVoiceCapture({
+        if (microphoneGeneration !== microphoneAcquisitionGenerationRef.current || epoch !== operationEpochRef.current || !canAcceptVoiceCapture({
           startedGeneration: generation,
           currentGeneration: voiceInputGenerationRef.current,
           conversationMode: conversationModeRef.current,
           signal,
         })) {
           stream?.getTracks().forEach((track) => track.stop());
-          return;
+          return false;
         }
         mediaStreamRef.current = stream;
       } catch (err) {
-        if (epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted) return;
+        if (microphoneGeneration !== microphoneAcquisitionGenerationRef.current || epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted) return false;
         pendingStreamPromiseRef.current = null;
         if (err instanceof VoiceCaptureTimeoutError) operationEpochRef.current += 1;
-        dispatch({ type: "CAPTURE_FAILED", stage: "permission", code: err instanceof VoiceCaptureTimeoutError ? "MIC_PERMISSION_TIMEOUT" : "MIC_UNAVAILABLE", error: err instanceof VoiceCaptureTimeoutError ? "Microphone permission took too long. Check the browser prompt and retry." : (err && err.message ? err.message : String(err)), retryable: true });
-        return;
+        dispatch({ type: preserveSubmittedWork ? "MIC_RECOVERY_FAILED" : "CAPTURE_FAILED", stage: "permission", code: err instanceof VoiceCaptureTimeoutError ? "MIC_PERMISSION_TIMEOUT" : "MIC_UNAVAILABLE", error: err instanceof VoiceCaptureTimeoutError ? "Microphone permission took too long. Check the browser prompt and retry." : (err && err.message ? err.message : String(err)), retryable: true });
+        return false;
       } finally {
         if (pendingStreamPromiseRef.current === pending) pendingStreamPromiseRef.current = null;
       }
     }
-    if (epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted) return;
+    if (microphoneGeneration !== microphoneAcquisitionGenerationRef.current || epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted) return false;
     if (!wrapperRef.current.state.continuousRequested && !["starting", "capturing"].includes(wrapperRef.current.state.state)) {
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
       mediaStreamRef.current = null;
-      return;
+      return false;
     }
     // The AudioContext was (ideally) created + resumed in-gesture by
     // primeAudioStack. Create it here only as a fallback for non-gesture entry
-    // paths (e.g. continuous resumed programmatically). Either way, wire the
-    // analyser graph exactly once, and resume() again defensively.
+    // paths (e.g. continuous resumed programmatically), then resume it
+    // defensively before starting the speech detector.
     if (!audioContextRef.current) {
       try {
         const Ctx = runtimeAudioContext();
         if (!Ctx) {
-          dispatch({ type: "CAPTURE_FAILED", stage: "microphone", code: "AUDIO_CONTEXT_UNSUPPORTED", error: "This browser cannot start the microphone audio engine. Use typed chat or a supported browser.", retryable: false });
-          return;
+          dispatch({ type: preserveSubmittedWork ? "MIC_RECOVERY_FAILED" : "CAPTURE_FAILED", stage: "microphone", code: "AUDIO_CONTEXT_UNSUPPORTED", error: "This browser cannot start the microphone audio engine. Use typed chat or a supported browser.", retryable: false });
+          return false;
         }
         audioContextRef.current = new Ctx();
       } catch (err) {
-        dispatch({ type: "CAPTURE_FAILED", stage: "microphone", code: "AUDIO_CONTEXT_FAILED", error: "The microphone audio engine could not start. Retry voice capture.", retryable: true });
-        return;
+        dispatch({ type: preserveSubmittedWork ? "MIC_RECOVERY_FAILED" : "CAPTURE_FAILED", stage: "microphone", code: "AUDIO_CONTEXT_FAILED", error: "The microphone audio engine could not start. Retry voice capture.", retryable: true });
+        return false;
       }
     }
     const ctx = audioContextRef.current;
@@ -1067,39 +953,35 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       try {
         await awaitCaptureOperation(ctx.resume(), signal, 5000);
       } catch {
-        if (epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted) return;
-        dispatch({ type: "CAPTURE_FAILED", stage: "microphone", code: "AUDIO_CONTEXT_SUSPENDED", error: "The microphone audio engine stayed paused. Press Retry to start voice again.", retryable: true });
-        return;
+        if (microphoneGeneration !== microphoneAcquisitionGenerationRef.current || epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted) return false;
+        dispatch({ type: preserveSubmittedWork ? "MIC_RECOVERY_FAILED" : "CAPTURE_FAILED", stage: "microphone", code: "AUDIO_CONTEXT_SUSPENDED", error: "The microphone audio engine stayed paused. Press Retry to start voice again.", retryable: true });
+        return false;
       }
     }
-    if (epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted) return;
-    if (!analyserRef.current) {
-      try {
-        const source = ctx.createMediaStreamSource(mediaStreamRef.current);
-        audioInputSourceRef.current = source;
-        analyserRef.current = ctx.createAnalyser();
-        analyserRef.current.fftSize = 1024;
-        analyserRef.current.smoothingTimeConstant = 0.6;
-        source.connect(analyserRef.current);
-      } catch (err) {
-        dispatch({ type: "CAPTURE_FAILED", stage: "microphone", code: "MIC_SETUP_FAILED", error: "The microphone could not start listening. Retry voice capture.", retryable: true });
-        return;
-      }
-    }
+    if (microphoneGeneration !== microphoneAcquisitionGenerationRef.current || epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted) return false;
     if (wrapperRef.current.state.continuousRequested) {
       try {
-        await ensureContinuousSpeechDetector(epoch, signal);
+        const detector = await ensureContinuousSpeechDetector(epoch, signal, { preserveSubmittedWork });
+        if (!detector) return false;
       } catch (err) {
-        if (epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted || err?.name === "AbortError") return;
-        dispatch({ type: "CAPTURE_FAILED", stage: "microphone", code: "VAD_INIT_FAILED", error: "Speech detection could not start. Push to talk is still available.", retryable: true });
-        return;
+        if (microphoneGeneration !== microphoneAcquisitionGenerationRef.current || epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted || err?.name === "AbortError") return false;
+        dispatch({ type: preserveSubmittedWork ? "MIC_RECOVERY_FAILED" : "CAPTURE_FAILED", stage: "microphone", code: "VAD_INIT_FAILED", error: "Speech detection could not start. Push to talk is still available.", retryable: true });
+        return false;
       }
     }
-    if (epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted) return;
+    if (microphoneGeneration !== microphoneAcquisitionGenerationRef.current || epoch !== operationEpochRef.current || generation !== voiceInputGenerationRef.current || conversationModeRef.current === "chat" || signal.aborted) return false;
+    if (awaitDetectorReady && wrapperRef.current.state.continuousRequested) {
+      const readiness = speechDetectorReadinessRef.current;
+      if (readiness && readiness.generation === speechDetectorGenerationRef.current) {
+        const ready = await awaitCaptureOperation(readiness.promise, signal, 6000).catch(() => false);
+        if (!ready || microphoneGeneration !== microphoneAcquisitionGenerationRef.current || signal.aborted) return false;
+      }
+    }
     // Law 9: watch the live mic track for loss (device unplug, OS revoke) so
     // we can announce + re-acquire instead of dying silently in "listening".
     // Called through a ref to avoid a definition-order cycle with reacquireMic.
     if (attachMicLossHandlersRef.current) attachMicLossHandlersRef.current();
+    return true;
   }, [acquireMediaStream, awaitCaptureOperation, ensureContinuousSpeechDetector, runtimeAudioContext]);
 
   // ---------- mic-loss self-recovery (T-0010 Law 9) ----------
@@ -1123,48 +1005,44 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       summary: "I lost the mic, reconnecting…",
       source: "voice/recovery",
     });
-    // Drop the dead stream + analyser graph so ensureMicAndVad rebuilds cleanly.
+    const state = wrapperRef.current.state;
+    const wantsListening = state.continuousRequested || state.state === "listening";
+    const preserveSubmittedWork = captureSubmissionCommittedRef.current || state.requestPending || ["transcribing", "thinking", "speaking"].includes(state.state);
+    // Use the same capture-only invalidation boundary as an explicit device
+    // change. It rotates pending getUserMedia work, destroys the detector bound
+    // to the ended stream, and preserves a recorder/STT result that was already
+    // committed. The shared AudioContext stays gesture-unlocked for playback.
+    invalidateMicrophoneInputRef.current?.(state);
+    const recoveryMicrophoneGeneration = microphoneAcquisitionGenerationRef.current;
+    if (!wantsListening) {
+      dispatch({ type: preserveSubmittedWork ? "MIC_RECOVERY_FAILED" : "CAPTURE_FAILED", stage: "microphone", code: "MIC_STREAM_ENDED", error: "The microphone disconnected during capture. Retry voice capture.", retryable: true });
+      micRecoveringRef.current = false;
+      return;
+    }
+    completionInputOwnershipRef.current = true;
+    dispatch({ type: "MIC_RECOVERY_STARTED" });
     try {
-      const dead = mediaStreamRef.current;
-      if (dead) dead.getTracks().forEach((t) => t.stop());
-    } catch {
-      /* noop */
-    }
-    mediaStreamRef.current = null;
-    pendingStreamPromiseRef.current = null;
-    handledTrackIdsRef.current.clear();
-    // Clear the VAD interval inline (not via clearVadInterval, which is
-    // declared later — depending on it would put this callback's dep array in
-    // that const's TDZ and crash SSR).
-    if (vadIntervalRef.current) {
-      clearInterval(vadIntervalRef.current);
-      vadIntervalRef.current = null;
-    }
-    if (analyserRef.current) {
-      try {
-        analyserRef.current.disconnect();
-      } catch {
-        /* noop */
+      const recovered = await ensureMicAndVad({ preserveSubmittedWork, awaitDetectorReady: true });
+      if (!recovered) {
+        completionInputOwnershipRef.current = false;
+        // A detector that never becomes ready must not remain bound to a dead
+        // replacement stream. Do not touch a newer user-selected acquisition.
+        if (recoveryMicrophoneGeneration === microphoneAcquisitionGenerationRef.current) {
+          invalidateMicrophoneInputRef.current?.(wrapperRef.current.state);
+        }
+        return;
       }
-      analyserRef.current = null;
-    }
-    // Re-acquire only if the user still wants to be listening — respect
-    // continuous mode. If they're idle, the next press re-primes anyway.
-    const wantsListening =
-      wrapperRef.current.state.continuousRequested ||
-      wrapperRef.current.state.state === "listening";
-    try {
-      if (wantsListening) {
-        await ensureMicAndVad();
-        publishVoiceActivity({
-          kind: "info",
-          state: "listening",
-          title: "Microphone reconnected",
-          summary: "Mic is back — listening again.",
-          source: "voice/recovery",
-        });
-      }
+      dispatch({ type: "MIC_RECOVERY_READY" });
+      completionInputOwnershipRef.current = false;
+      publishVoiceActivity({
+        kind: "info",
+        state: "listening",
+        title: "Microphone reconnected",
+        summary: "Mic is back — listening again.",
+        source: "voice/recovery",
+      });
     } catch {
+      completionInputOwnershipRef.current = false;
       /* ensureMicAndVad surfaces its own failure */
     } finally {
       micRecoveringRef.current = false;
@@ -1247,7 +1125,6 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       rec.start(100);
       mediaRecorderRef.current = rec;
       speechStartedAtRef.current = performance.now();
-      lastVoiceAtRef.current = performance.now();
       dispatch({ type: "RECORDER_STARTED" });
     } catch (err) {
       publishVoiceActivity({
@@ -1333,6 +1210,8 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
 
   const destroySpeechDetector = useCallback(() => {
     speechDetectorGenerationRef.current += 1;
+    speechDetectorReadinessRef.current?.resolve(false);
+    speechDetectorReadinessRef.current = null;
     if (speechDetectorReadyTimerRef.current) clearTimeout(speechDetectorReadyTimerRef.current);
     speechDetectorReadyTimerRef.current = null;
     if (speechDetectorSignalTimerRef.current) clearTimeout(speechDetectorSignalTimerRef.current);
@@ -1361,10 +1240,6 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     const ctx = audioContextRef.current;
     if (!ctx) return;
     audioContextRef.current = null;
-    try { audioInputSourceRef.current?.disconnect(); } catch { /* noop */ }
-    audioInputSourceRef.current = null;
-    try { analyserRef.current?.disconnect(); } catch { /* noop */ }
-    analyserRef.current = null;
     try {
       if (ctx.state !== "closed") await ctx.close();
     } catch {
@@ -1372,29 +1247,55 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     }
   }, []);
 
-  const clearVadInterval = useCallback(() => {
-    if (vadIntervalRef.current) {
-      clearInterval(vadIntervalRef.current);
-      vadIntervalRef.current = null;
-    }
-  }, []);
-
   const releaseMicForPlayback = useCallback(() => {
-    clearVadInterval();
     stopAllTracks();
-    try { audioInputSourceRef.current?.disconnect(); } catch { /* noop */ }
-    audioInputSourceRef.current = null;
-    try { analyserRef.current?.disconnect(); } catch { /* noop */ }
-    analyserRef.current = null;
     // Keep the gesture-unlocked AudioContext alive. A replacement created
     // after async STT/chat/TTS work may remain suspended in WebKit.
-  }, [clearVadInterval, stopAllTracks]);
+  }, [stopAllTracks]);
+
+  const invalidateMicrophoneInput = useCallback((state) => {
+    microphoneAcquisitionGenerationRef.current += 1;
+    operationAbortRef.current.abort();
+    operationAbortRef.current = new AbortController();
+    pttGestureRef.current.reset();
+    captureSourceRef.current = null;
+    // A pending getUserMedia call cannot itself be cancelled. Its captured
+    // microphone generation stops the late stream when it eventually resolves.
+    pendingStreamPromiseRef.current = null;
+    const oldStream = mediaStreamRef.current;
+    mediaStreamRef.current = null;
+    handledTrackIdsRef.current.clear();
+    destroySpeechDetector();
+    const releaseOldStream = () => {
+      try { oldStream?.getTracks().forEach((track) => track.stop()); } catch { /* noop */ }
+    };
+    if (["starting", "capturing"].includes(state.state) && !captureSubmissionCommittedRef.current) {
+      // This utterance has not been submitted. Discard it before releasing the
+      // track so a device change cannot create a partial transcript.
+      void Promise.resolve(stopUtteranceRecorder(true)).catch(() => {}).finally(releaseOldStream);
+      return;
+    }
+    if (recorderStopRef.current) {
+      // STOP_PTT has already committed the utterance. Let MediaRecorder flush
+      // its final blob before the old input track is released.
+      void Promise.resolve(recorderStopRef.current).catch(() => {}).finally(releaseOldStream);
+      return;
+    }
+    const recorder = mediaRecorderRef.current;
+    if ((state.state === "transcribing" || captureSubmissionCommittedRef.current) && recorder && recorder.state !== "inactive") {
+      void Promise.resolve(stopUtteranceRecorder(false)).catch(() => {}).finally(releaseOldStream);
+      return;
+    }
+    releaseOldStream();
+  }, [destroySpeechDetector, stopUtteranceRecorder]);
+  invalidateMicrophoneInputRef.current = invalidateMicrophoneInput;
 
   // ---------- STT / Chat / TTS ----------
 
   const callSTT = useCallback(async () => {
     const blob = latestBlobRef.current;
     latestBlobRef.current = null;
+    captureSubmissionCommittedRef.current = false;
     if (!blob) {
       // Empty utterance — fall back to rest state without erroring.
       dispatch({ type: "STT_OK", text: "" });
@@ -1636,11 +1537,13 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
   };
 
   const callChat = useCallback(async (text, textOnly = false, preserveContinuous = false) => {
+    const surface = conversationModeRef.current === "talk" ? "talk" : "chat";
     const resolvedTextOnly = resolveTextOnlyMode(textOnly, conversationModeRef.current);
     setAcceptedActionId(null);
     stopVoiceFeedback();
     const submittedAt = Date.now();
     const epoch = operationEpochRef.current;
+    const voiceGeneration = voiceInputGenerationRef.current;
     chatAbortRef.current?.abort();
     const controller = new AbortController();
     chatAbortRef.current = controller;
@@ -1658,13 +1561,12 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       // Playback still waits for server acceptance and checks this run's state.
       const prepared = cue ? prepareVoiceFeedback(cue) : null;
       preparedVoiceFeedbackRef.current = prepared;
-      const target = cfg.voiceModel
-        ? `${cfg.voiceModelProvider || "auto"}/${cfg.voiceModel}`
-        : "Hermes default model";
+      const target = surface === "talk" ? "Talk model route" : "Chat model route";
       const res = await runtimeFetch("/api/voice/chat", voiceChatRequest({
         text,
         actionId,
         sessionId: sessionIdRef.current,
+        surface,
         textOnly: resolvedTextOnly,
         sttMs: sttMsRef.current,
         history: normalizeTranscriptEntries(wrapperRef.current.state.transcript).filter((entry) => !entry.isError).slice(-30),
@@ -1715,8 +1617,15 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       const pendingRun = (json.mode === "action" || json.mode === "data") && Boolean(json.actionId);
       if (pendingRun) {
         markRunPending(json.actionId, resolvedTextOnly);
+      } else {
+        // A direct response is already terminal. Give it the same stable
+        // identity as durable run history and remove the optimistic poller
+        // registration so a legacy/immediate response cannot time out later.
+        pendingRunsRef.current.delete(actionId);
+        textRunIdsRef.current.delete(actionId);
+        try { runtimeStorage()?.setItem(pendingRunsStorageKey, JSON.stringify([...pendingRunsRef.current].map(([id, at]) => ({ id, at, textOnly: textRunIdsRef.current.has(id) })))); } catch {}
       }
-      dispatch({ type: "CHAT_OK", response: json.response, textOnly: resolveTextOnlyMode(resolvedTextOnly, conversationModeRef.current), preserveContinuous, pendingRun });
+      dispatch({ type: "CHAT_OK", response: json.response, id: `${actionId}:result`, actionId, textOnly: resolveTextOnlyMode(resolvedTextOnly, conversationModeRef.current) || voiceGeneration !== voiceInputGenerationRef.current, preserveContinuous, pendingRun });
     } catch (err) {
       stopVoiceFeedback();
       if (!current() || (controller.signal.aborted && controller.signal.reason?.name !== "TimeoutError")) return;
@@ -2174,34 +2083,62 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     ttsAbortRef.current = null;
     latestBlobRef.current = null;
     for (const actionId of pendingRunsRef.current.keys()) {
+      const textOnly = textRunIdsRef.current.has(actionId);
       cancelledRunIdsRef.current.add(actionId);
       runtimeFetch("/api/voice/runs", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: sessionIdRef.current, actionId }), signal: AbortSignal.timeout(10000) })
-        .then((res) => { if (!res.ok) throw new Error("Cancellation could not be confirmed. Check Activity before retrying the task."); })
+        .then(async (res) => {
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error("Cancellation could not be confirmed. Check Activity before retrying the task.");
+          const run = json?.run;
+          if (!run?.outcome) return;
+          const entryId = `completion-${actionId}:cancelled`;
+          spokenCompletionIdsRef.current.add(`${run.id || actionId}:failed`);
+          dispatch({
+            type: "SPEAK_COMPLETION",
+            actionId,
+            textOnly: true,
+            isError: true,
+            text: run.error || "Stop requested.",
+            entryId,
+            outcome: run.outcome,
+          });
+          if (run.outcome.execution?.active === true) {
+            cancelledRunIdsRef.current.delete(actionId);
+            pendingOutcomeRefreshRef.current.set(actionId, JSON.stringify(run.outcome));
+            markRunPending(actionId, textOnly);
+          }
+        })
         .catch((error) => dispatch({ type: "CHAT_FAILED", error: error.message, code: "CANCEL_UNCONFIRMED", retryable: false }));
     }
     pendingRunsRef.current.clear();
     try { runtimeStorage()?.removeItem(pendingRunsStorageKey); } catch {}
-  }, []);
+  }, [markRunPending]);
 
   const enterChatResponseMode = useCallback(() => {
     const state = wrapperRef.current.state;
     pttGestureRef.current.reset();
     captureSourceRef.current = null;
+    completionInputOwnershipRef.current = false;
     voiceInputGenerationRef.current += 1;
     operationAbortRef.current.abort();
     operationAbortRef.current = new AbortController();
+    sttAbortRef.current?.abort();
+    sttAbortRef.current = null;
     pendingStreamPromiseRef.current = null;
     if (["starting", "capturing"].includes(state.state)) {
       if (state.state === "capturing") latestBlobRef.current = null;
       void stopUtteranceRecorder(true);
     }
-    clearVadInterval();
     stopAllTracks();
     void closeAudioContext();
     stopVoiceFeedbackRef.current?.();
     stopAudio();
     dispatch({ type: "RESPONSE_MODE_CHANGED", mode: "chat" });
-  }, [clearVadInterval, closeAudioContext, stopAllTracks, stopUtteranceRecorder, stopAudio]);
+  }, [closeAudioContext, stopAllTracks, stopUtteranceRecorder, stopAudio]);
+
+  // Talk mode changes use the same non-destructive boundary as Talk → Chat:
+  // stop local capture and playback without cancelling an acknowledged run.
+  const suspendVoiceSurface = enterChatResponseMode;
 
   useEffect(() => {
     const previousMode = previousConversationModeRef.current;
@@ -2224,12 +2161,24 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     dispatch({ type: "ACK_EFFECTS", through: processedEffectsRef.current });
 
     const enqueuedEpoch = operationEpochRef.current;
+    const enqueuedVoiceGeneration = voiceInputGenerationRef.current;
+    const enqueuedMicrophoneGeneration = microphoneAcquisitionGenerationRef.current;
     const isCancellationBatch = effects.some((effect) => effect.kind === "cancelRequests");
     effectQueueRef.current = effectQueueRef.current.catch(() => {}).then(async () => {
       let epoch = enqueuedEpoch;
       if (!isCancellationBatch && epoch !== operationEpochRef.current) return;
       for (const fx of effects) {
         if (epoch !== operationEpochRef.current) break;
+        if (isMicrophoneGenerationEffect(fx) && enqueuedMicrophoneGeneration !== microphoneAcquisitionGenerationRef.current) {
+          continue;
+        }
+        if (["requestPermission", "syncContinuous", "startRecorder", "callSTT", "releaseMicForPlayback", "callTTS", "playAudio"].includes(fx.kind) && enqueuedVoiceGeneration !== voiceInputGenerationRef.current) {
+          if (fx.kind === "playAudio") {
+            revokeOnce(fx.url);
+            dispatch({ type: "TTS_PLAYBACK_ENDED", url: fx.url });
+          }
+          continue;
+        }
         try {
           switch (fx.kind) {
             case "cancelRequests":
@@ -2240,21 +2189,20 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
               if (fx.on) {
                 if (conversationModeRef.current === "chat") break;
                 await ensureMicAndVad();
-              } else {
-                clearVadInterval();
               }
               break;
             case "startRecorder":
               if (conversationModeRef.current === "chat") break;
               if (fx.ptt && !pttGestureRef.current.isHeld()) break;
-              // Lazily ensure the mic stream + analyser exist before recording.
+              // Lazily ensure the mic stream and audio context exist before recording.
               // PTT mode releases these between turns to let macOS flip the
               // Bluetooth headset back to A2DP for full-quality TTS playback.
               if (recorderStopRef.current) await recorderStopRef.current;
-              if (epoch !== operationEpochRef.current) break;
+              if (enqueuedMicrophoneGeneration !== microphoneAcquisitionGenerationRef.current || epoch !== operationEpochRef.current) break;
               if (!mediaStreamRef.current || !audioContextRef.current) {
                 await ensureMicAndVad();
               }
+              if (enqueuedMicrophoneGeneration !== microphoneAcquisitionGenerationRef.current || epoch !== operationEpochRef.current) break;
               if (wrapperRef.current.state.continuousRequested && captureSourceRef.current === "ptt" && speechDetectorRef.current) {
                 const detector = speechDetectorRef.current;
                 const pause = speechDetectorControlRef.current.catch(() => {}).then(async () => {
@@ -2269,7 +2217,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
                   break;
                 }
               }
-              if (epoch !== operationEpochRef.current || (fx.ptt && !pttGestureRef.current.isHeld()) || !["starting", "capturing"].includes(wrapperRef.current.state.state)) break;
+              if (enqueuedMicrophoneGeneration !== microphoneAcquisitionGenerationRef.current || epoch !== operationEpochRef.current || (fx.ptt && !pttGestureRef.current.isHeld()) || !["starting", "capturing"].includes(wrapperRef.current.state.state)) break;
               startUtteranceRecorder();
               break;
             case "stopRecorder":
@@ -2290,9 +2238,6 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
             case "stopVisualizer":
               // The visualizer canvas is owned by VoiceDock; it observes
               // wrapper.state.state and tears its own RAF down.
-              break;
-            case "clearVadInterval":
-              clearVadInterval();
               break;
             case "callSTT":
               await callSTT();
@@ -2433,6 +2378,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
           streamedRunsRef.current.delete(id);
           setPendingPermission((current) => current?.actionId === id ? null : current);
           pendingRunsRef.current.delete(id);
+          pendingOutcomeRefreshRef.current.delete(id);
           dispatch({ type: "SPEAK_COMPLETION", actionId: id, textOnly: true, isError: true, text: "Hermes could not confirm this request’s completion. Check Activity before retrying.", entryId: `completion-${id}:timeout` });
           try { runtimeStorage()?.setItem(pendingRunsStorageKey, JSON.stringify([...pendingRunsRef.current].map(([id, at]) => ({ id, at, textOnly: textRunIdsRef.current.has(id) })))); } catch {}
         } else {
@@ -2450,7 +2396,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
         const pending = [...pendingRunsRef.current.keys()];
         const results = await Promise.allSettled(pending.map(async (actionId) => {
           const streamed = streamedRunsRef.current.get(actionId);
-          const terminal = streamed && ["complete", "error", "cancelled", "interrupted"].includes(streamed.state);
+          const terminal = streamed && ["complete", "error", "cancelled", "interrupted"].includes(streamed.state) && !pendingOutcomeRefreshRef.current.has(actionId);
           const res = terminal ? { ok: true, status: 200 } : await runtimeFetch(`/api/voice/runs?sessionId=${encodeURIComponent(sid)}&actionId=${encodeURIComponent(actionId)}`, { cache: "no-store", signal: AbortSignal.timeout(10000) });
           const run = terminal ? streamed : (await res.json()).run;
           if (stopped || !pendingRunsRef.current.has(actionId)) return null;
@@ -2467,7 +2413,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
             }
             return null;
           }
-          return { id: `${run.id || actionId}:${run.state === "complete" ? "complete" : "failed"}`, source: "voice/action", sessionId: sid, state: run.state === "complete" ? "complete" : "error", summary: run.response || run.error || "The task ended without a response.", updatedAt: new Date().toISOString(), textOnly: textRunIdsRef.current.has(actionId) };
+          return { id: `${run.id || actionId}:${run.state === "complete" ? "complete" : "failed"}`, source: "voice/action", sessionId: sid, state: run.state === "complete" ? "complete" : "error", summary: run.response || run.error || "The task ended without a response.", partialResponse: run.partialResponse || "", outcome: run.outcome || null, updatedAt: new Date().toISOString(), textOnly: textRunIdsRef.current.has(actionId) };
         }));
         if (stopped) return;
         const events = results.filter((item) => item.status === "fulfilled" && item.value).map((item) => item.value);
@@ -2479,6 +2425,20 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
           if (stopped) return;
           events.push(...(Array.isArray(json?.events) ? json.events : []).filter((event) => !pendingRunsRef.current.has(completionRunId(event))));
         }
+        for (const event of events) {
+          const runId = completionRunId(event);
+          if (!pendingOutcomeRefreshRef.current.has(runId) || !event.outcome) continue;
+          const signature = JSON.stringify(event.outcome);
+          if (signature !== pendingOutcomeRefreshRef.current.get(runId)) {
+            pendingOutcomeRefreshRef.current.set(runId, signature);
+            dispatch({ type: "UPDATE_RUN_OUTCOME", actionId: runId, outcome: event.outcome });
+          }
+          if (event.outcome.execution?.active !== true) {
+            pendingOutcomeRefreshRef.current.delete(runId);
+            pendingRunsRef.current.delete(runId);
+            try { runtimeStorage()?.setItem(pendingRunsStorageKey, JSON.stringify([...pendingRunsRef.current].map(([id, at]) => ({ id, at, textOnly: textRunIdsRef.current.has(id) })))); } catch {}
+          }
+        }
         // Speak at most one completion per tick so we never queue two TTS
         // synths back to back; the next tick handles the following one.
         const next = selectSpeakableCompletion(events.filter((event) => !cancelledRunIdsRef.current.has(completionRunId(event))), {
@@ -2489,9 +2449,11 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
         if (next) {
           if (next.state === "error") stopVoiceFeedbackRef.current?.();
           else retireVoiceFeedbackRef.current?.();
-          const currentState = wrapperRef.current.state.state;
           const textOnly = shouldSuppressVoiceOutput(conversationModeRef.current, isTextCompletion(next, textRunIdsRef.current));
-          if (textOnly || (wrapperRef.current.state.requestPending && wrapperRef.current.state.actionId === completionRunId(next)) || canSpeakCompletionNow(currentState)) {
+          if (canHandleCompletionNow(wrapperRef.current.state, {
+            actionId: completionRunId(next),
+            textOnly,
+          }, { inputOwned: completionInputOwnershipRef.current })) {
             // Handled: mark spoken (whether it speaks or is skipped for
             // autoSpeak/mute — both are terminal in the reducer) and clear its
             // pending run so we can fall back to the idle cadence.
@@ -2520,7 +2482,12 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
             answerStreamsRef.current.delete(runId);
             streamedRunsRef.current.delete(runId);
             setPendingPermission((current) => current?.actionId === runId ? null : current);
-            pendingRunsRef.current.delete(runId);
+            if (next.outcome?.execution?.active === true) {
+              pendingOutcomeRefreshRef.current.set(runId, JSON.stringify(next.outcome));
+            } else {
+              pendingOutcomeRefreshRef.current.delete(runId);
+              pendingRunsRef.current.delete(runId);
+            }
             try { runtimeStorage()?.setItem(pendingRunsStorageKey, JSON.stringify([...pendingRunsRef.current].map(([id, at]) => ({ id, at, textOnly: textRunIdsRef.current.has(id) })))); } catch {}
             dispatch({
               type: "SPEAK_COMPLETION",
@@ -2530,6 +2497,8 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
               isError: next.state === "error",
               actionId: runId,
               streamHandled,
+              partialResponse: next.partialResponse,
+              outcome: next.outcome || null,
             });
           }
           // else: HOLD — leave it unspoken and retry on the next tick.
@@ -2658,10 +2627,6 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       const detector = speechDetectorRef.current;
       speechDetectorRef.current = null;
       if (detector) void Promise.resolve(detector.destroy?.()).catch(() => {});
-      if (vadIntervalRef.current) {
-        clearInterval(vadIntervalRef.current);
-        vadIntervalRef.current = null;
-      }
       const stream = mediaStreamRef.current;
       if (stream) {
         try {
@@ -2676,7 +2641,6 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
         ctx.close().catch(() => {});
       }
       audioContextRef.current = null;
-      analyserRef.current = null;
       // Tear down the active clip's stall interval / stream reader / listeners
       // before dropping the audio element, so nothing outlives the component
       // (T-0009 fix B).
@@ -2729,6 +2693,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       const state = wrapperRef.current.state;
       pttGestureRef.current.reset();
       if (!state.continuousRequested && ["idle", "error"].includes(state.state)) {
+        completionInputOwnershipRef.current = true;
         primeAudioStack();
         void warmVoiceRuntime();
         voiceStartupAtRef.current = Date.now();
@@ -2737,12 +2702,13 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       const pendingStartup = state.permission === "pending" || state.state === "starting";
       const requestsCancelled = state.continuousRequested || !["idle", "error"].includes(state.state);
       if (requestsCancelled) cancelRequests();
+      if (requestsCancelled) completionInputOwnershipRef.current = false;
       if (pendingStartup) {
-        clearVadInterval(); stopAllTracks(); void closeAudioContext();
+        stopAllTracks(); void closeAudioContext();
       }
       dispatch({ type: "TOGGLE_CONTINUOUS", teardownHandled: pendingStartup, requestsCancelled });
     },
-    [cancelRequests, clearVadInterval, closeAudioContext, primeAudioStack, stopAllTracks, warmVoiceRuntime]
+    [cancelRequests, closeAudioContext, primeAudioStack, stopAllTracks, warmVoiceRuntime]
   );
   toggleContinuousRef.current = toggleContinuous;
   const startPushToTalk = useCallback(() => {
@@ -2757,6 +2723,8 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
     // that do not separately know about audio-stack priming.
     primeAudioStack();
     void warmVoiceRuntime();
+    captureSubmissionCommittedRef.current = false;
+    completionInputOwnershipRef.current = true;
     captureSourceRef.current = "ptt";
     dispatch({ type: "START_PTT" });
     return true;
@@ -2776,12 +2744,14 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       operationEpochRef.current += 1;
       operationAbortRef.current.abort();
       operationAbortRef.current = new AbortController();
-      clearVadInterval(); stopAllTracks(); void closeAudioContext();
+      stopAllTracks(); void closeAudioContext();
     }
+    captureSubmissionCommittedRef.current = !discard;
+    completionInputOwnershipRef.current = !discard;
     captureSourceRef.current = null;
     dispatch({ type: discard ? "CANCEL_PTT" : "STOP_PTT", teardownHandled: synchronousTeardown });
     return true;
-  }, [clearVadInterval, closeAudioContext, stopAllTracks]);
+  }, [closeAudioContext, stopAllTracks]);
   const stopPushToTalk = useCallback(() => finishPushToTalk(false), [finishPushToTalk]);
   const cancelPushToTalk = useCallback(() => finishPushToTalk(true), [finishPushToTalk]);
   const retryPermission = useCallback(
@@ -2794,7 +2764,16 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
   );
   const updateConfig = useCallback(async (partial, { persist = true } = {}) => {
     if (!partial || typeof partial !== "object") return;
-    dispatch({ type: "UPDATE_CONFIG", partial });
+    const hasMicrophoneSelection = Object.hasOwn(partial, "micDeviceId");
+    const nextMicrophone = typeof partial.micDeviceId === "string" ? partial.micDeviceId : "";
+    const microphoneChanged = hasMicrophoneSelection && nextMicrophone !== (wrapperRef.current.state.config?.micDeviceId || "");
+    if (microphoneChanged) {
+      const state = wrapperRef.current.state;
+      invalidateMicrophoneInput(state);
+      dispatch({ type: "MIC_INPUT_CHANGED", partial: { ...partial, micDeviceId: nextMicrophone } });
+    } else {
+      dispatch({ type: "UPDATE_CONFIG", partial });
+    }
     // Models has already persisted its choice through the validated model route.
     if (!persist) return true;
     const saveId = ++configSaveSequenceRef.current;
@@ -2822,7 +2801,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       }
       return false;
     }
-  }, []);
+  }, [invalidateMicrophoneInput, runtimeFetch]);
   const sendText = useCallback(async (text) => {
     const trimmed = String(text == null ? "" : text).trim();
     if (!trimmed) return;
@@ -2840,6 +2819,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
   }, []);
   const cancelCurrent = useCallback(() => {
     pttGestureRef.current.reset();
+    completionInputOwnershipRef.current = false;
     cancelRequests();
     stopAudio();
     dispatch({ type: "CANCEL_CURRENT", requestsCancelled: true });
@@ -2898,6 +2878,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       loadVoices,
       sendText,
       cancelCurrent,
+      suspendVoiceSurface,
       retryLastRequest,
       releasePrimedAudio,
       canRetry: !!wrapper.state.lastError?.retryable && !!lastRequestRef.current,
@@ -2941,6 +2922,7 @@ export default function VoiceProvider({ children, testRuntime = null, sessionId 
       loadVoices,
       sendText,
       cancelCurrent,
+      suspendVoiceSurface,
       retryLastRequest,
       releasePrimedAudio,
       openSettings,

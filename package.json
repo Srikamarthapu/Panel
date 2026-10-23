@@ -1,6 +1,6 @@
 {
   "name": "panel",
-  "version": "0.5.2",
+  "version": "0.6.0-preview.3",
   "type": "module",
   "private": true,
   "license": "MIT",
@@ -10,11 +10,19 @@
     "dev": "node scripts/start-panel.mjs dev",
     "build": "node scripts/build-panel.mjs",
     "start": "node scripts/start-panel.mjs start",
-    "test": "npm run test:unit && npm run test:property",
+    "test": "npm run test:unit && npm run test:property && npm run test:py",
     "test:unit": "node --test \"tests/unit/**/*.test.js\"",
     "test:property": "node --test \"tests/property/**/*.test.js\"",
+    "test:py": "node scripts/test-python.mjs",
+    "test:py:host": "node scripts/test-python.mjs --host",
     "test:e2e": "playwright test tests/e2e",
     "test:smoke": "playwright test tests/smoke",
+    "test:browser-server": "node --test tests/integration/browser-test-server-lifecycle.test.js",
+    "release:manifest:prepare": "node scripts/release/manifest.mjs prepare",
+    "release:manifest:review": "node scripts/release/manifest.mjs review",
+    "release:manifest:verify": "node scripts/release/manifest.mjs verify",
+    "release:manifest:approve": "node scripts/release/manifest.mjs approve",
+    "release:export": "node scripts/release/export.mjs",
     "test:live": "node scripts/voice/soak-15-turns.mjs",
     "queue": "node scripts/work-queue-worker.mjs",
     "test:runtime": "node scripts/runtime/test-jev.mjs"
@@ -24,11 +32,12 @@
     "border-beam": "^1.3.0",
     "lucide-react": "^1.46.0",
     "motion": "^12.40.0",
-    "next": "16.3.8",
+    "next": "16.4.2",
     "onnxruntime-web": "1.22.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "thinking-orbs": "^0.3.1"
+    "thinking-orbs": "^0.3.1",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.11.3",

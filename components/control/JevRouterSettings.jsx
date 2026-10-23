@@ -13,6 +13,9 @@ const options = [
   { key: "monitorProgress", title: "Detect repeated failures", description: "Give Hermes feedback when the same approach keeps failing, so it can change course." },
   { key: "manageContext", title: "Keep useful tool context", description: "Keep, shorten, or omit old tool output from supported model requests. Your saved conversation stays intact." },
 ];
+const optionKeys = options.map(option => option.key);
+const disabledOptions = Object.fromEntries(optionKeys.map(key => [key, false]));
+const optionSettings = value => Object.fromEntries(optionKeys.map(key => [key, Boolean(value?.[key])]));
 
 function settingsFrom(status) {
   return Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => [key, typeof status?.[key] === "boolean" ? status[key] : fallback]));
@@ -48,11 +51,16 @@ export default function JevRouterSettings() {
   const dirtyRef = useRef(false);
   const busyRef = useRef(false);
   const mutationEpoch = useRef(0);
+  const enabledOptions = useRef(optionSettings(defaults));
 
   const acceptStatus = useCallback((data, force = false) => {
     setStatus(data);
     setLoadError(false);
-    if (force || !dirtyRef.current) setSettings(settingsFrom(data));
+    if (force || !dirtyRef.current) {
+      const next = settingsFrom(data);
+      if (next.enabled || data?.preferences) enabledOptions.current = optionSettings(data?.preferences || next);
+      setSettings(next);
+    }
   }, []);
 
   useEffect(() => {
@@ -93,7 +101,14 @@ export default function JevRouterSettings() {
   function changeSetting(key, value) {
     dirtyRef.current = true;
     setDirty(true);
-    setSettings(current => ({ ...current, [key]: value }));
+    setSettings(current => {
+      if (key !== "enabled") return { ...current, [key]: value };
+      if (!value) {
+        enabledOptions.current = optionSettings(current);
+        return { ...current, enabled: false, ...disabledOptions };
+      }
+      return { ...current, enabled: true, ...enabledOptions.current };
+    });
     setNotice(null);
   }
   function changeKey(value) {
@@ -109,9 +124,11 @@ export default function JevRouterSettings() {
     setBusy(true);
     setNotice(null);
     try {
+      const effectiveSettings = settings.enabled ? settings : { ...settings, ...disabledOptions };
+      const preferences = settings.enabled ? optionSettings(settings) : enabledOptions.current;
       const response = await fetch("/api/models/router", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(removeKey ? { enabled: false, removeKey: true } : { ...settings, ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}) }),
+        body: JSON.stringify(removeKey ? { enabled: false, ...disabledOptions, preferences, removeKey: true } : { ...effectiveSettings, preferences, ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}) }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "Could not save Jev settings.");
@@ -143,8 +160,9 @@ export default function JevRouterSettings() {
 
     <form onSubmit={event => { event.preventDefault(); save(); }}>
       <fieldset disabled={busy} className={styles.fields}>
-        <label className={styles.master}><span><strong>Use Jev inside Hermes</strong><small>Applies to new requests in Talk, Chat, and enabled Discord sessions</small></span><input type="checkbox" role="switch" checked={settings.enabled} onChange={event => changeSetting("enabled", event.target.checked)} /><span className={styles.switchTrack} aria-hidden="true" /></label>
-        <div className={styles.options}>{options.map(option => <label className={styles.option} key={option.key}><input type="checkbox" checked={settings[option.key]} onChange={event => changeSetting(option.key, event.target.checked)} /><span><strong>{option.title}</strong><small>{option.description}</small></span></label>)}</div>
+        <label className={styles.master}><span><strong>Use Jev inside Hermes</strong><small>Applies to new requests in Talk, Chat, and enabled Discord sessions</small></span><input type="checkbox" role="switch" checked={settings.enabled} aria-controls="jev-options" onChange={event => changeSetting("enabled", event.target.checked)} /><span className={styles.switchTrack} aria-hidden="true" /></label>
+        <div className={styles.options} id="jev-options" aria-disabled={!settings.enabled}>{options.map(option => <label className={styles.option} key={option.key}><input type="checkbox" checked={settings.enabled && settings[option.key]} disabled={!settings.enabled} onChange={event => changeSetting(option.key, event.target.checked)} /><span><strong>{option.title}</strong><small>{option.description}</small></span></label>)}</div>
+        {!settings.enabled && <p className={styles.optionsDisabled}>Turn on Jev to configure routing and execution options.</p>}
         <label className={styles.key}><span>{connected ? "Replace TypeSafe API key" : "TypeSafe API key"}</span><input type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={event => changeKey(event.target.value)} placeholder={connected ? "Leave blank to keep the current key" : "Paste your TypeSafe API key"} /></label>
         {connected && status?.keySource !== "saved" && <p className={styles.keySource}>Hermes is using a key from its environment. Leave this field blank to keep using it.</p>}
         {connected && status?.keySuffix && <p className={styles.keySource}>Active TypeSafe key ends in <code>…{status.keySuffix}</code>.</p>}

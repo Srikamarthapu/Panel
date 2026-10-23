@@ -6,6 +6,7 @@ import MissionOrb from "@/components/MissionOrb.jsx";
 import { AVATAR_PALETTES } from "@/lib/interface-preferences.js";
 import { useInterfacePreferences } from "./InterfacePreferencesProvider.jsx";
 import OnboardingReplayButton from "@/components/onboarding/OnboardingReplayButton.jsx";
+import DirectConnectionSettings from "./DirectConnectionSettings.jsx";
 
 function ChoiceGroup({ label, value, options, onChange }) {
   return <div className="preferenceChoices" role="group" aria-label={label}>
@@ -24,9 +25,10 @@ export default function InterfaceSettings() {
   const reset = () => { resetPreferences(); setNotice("Appearance restored to the defaults."); };
 
   return <section className="preferencesPage">
-    <header className="preferencesHeading"><span className="workEyebrow">YOUR WORKSPACE</span><h1>Make Panel yours.</h1><p>Choose how your companion moves and how conversations read. Changes apply immediately and stay on this device.</p></header>
+    <header className="preferencesHeading"><span className="workEyebrow">YOUR WORKSPACE</span><h1>Make Panel yours.</h1><p>Appearance changes apply immediately. Connection changes apply when you save a key or choose a model.</p></header>
     <div className="preferencesLayout">
       <div className="preferencesControls">
+        <DirectConnectionSettings />
         <section className="preferenceSection" aria-labelledby="companion-heading">
           <h2 id="companion-heading">Companion</h2>
           <PreferenceRow title="Avatar" description="The same companion follows you between Talk and Chat.">
@@ -63,7 +65,7 @@ export default function InterfaceSettings() {
             <OnboardingReplayButton className="workButton workButton--quiet" />
           </PreferenceRow>
         </section>
-        <footer className="preferencesFooter"><button type="button" className="workButton workButton--quiet" onClick={reset}>Reset appearance</button><span role="status">{notice || (persistent ? "Saved automatically on this device." : "Applied for this window. Local storage is unavailable.")}</span></footer>
+        <footer className="preferencesFooter"><button type="button" className="workButton workButton--quiet" onClick={reset}>Reset appearance</button><span role="status">{notice || (persistent ? "Appearance saved automatically on this device." : "Applied for this window. Local storage is unavailable.")}</span></footer>
       </div>
       <aside className="preferencesPreview" aria-label="Companion preview">
         <div className="preferencesPreview__avatar"><MissionOrb avatar={avatar} voiceState="idle" /></div>

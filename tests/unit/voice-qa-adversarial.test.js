@@ -399,12 +399,18 @@ test("QA: STT daemon integration is untouched (voice chat route does not depend 
 
 test("QA: route.js does not import execFile or execFileAsync for hermes chat", () => {
   const route = readFileSync(resolve("app/api/voice/chat/route.js"), "utf8");
+  const handler = readFileSync(resolve("lib/voice-chat-handler.js"), "utf8");
   const launcher = readFileSync(resolve("lib/assistant-launch.js"), "utf8");
-  assert.match(route, /await startAssistantRun\(/);
+  assert.match(route, /import\s+\{\s*handleVoiceChatRequest\s*\}\s+from/);
+  assert.match(route, /return handleVoiceChatRequest\(request\)/);
+  assert.match(handler, /import\s+\{\s*startAssistantRun\s*\}\s+from/);
+  assert.match(handler, /\{\s*start\s*=\s*startAssistantRun\s*\}/);
+  assert.match(handler, /await start\(/);
   // Process ownership lives in the shared durable launcher.
   assert.match(launcher, /import\s+\{\s*spawn\s*\}\s+from\s+["']node:child_process["']/);
   assert.doesNotMatch(route, /execFile\s*\(/);
   assert.doesNotMatch(route, /execFileAsync/);
+  assert.doesNotMatch(handler, /execFile|spawn\s*\(/);
 });
 
 test("QA: shared assistant launcher uses detached spawn with unref", () => {

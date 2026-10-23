@@ -7,16 +7,17 @@ function profileCard(page, name) {
 }
 
 async function createProfile(page, { name, color = "sage", soul, workingDirectory, provider, model }) {
-  await page.getByRole("button", { name: "New agent", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "New agent" });
+  await page.getByRole("button", { name: "New teammate", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Create a teammate" });
   await expect(dialog).toBeVisible();
-  await dialog.getByLabel("Agent name").fill(name);
-  await dialog.getByLabel("Agent color").selectOption(color);
-  await dialog.getByLabel("SOUL.md").fill(soul);
+  await dialog.getByLabel("Teammate name").fill(name);
+  await dialog.getByLabel("Role and working instructions").fill(soul);
+  await dialog.getByText("Advanced setup", { exact: false }).click();
+  await dialog.getByLabel("Color").selectOption(color);
   await dialog.getByLabel("Working folder").fill(workingDirectory);
   await dialog.getByLabel("Provider").fill(provider);
   await dialog.getByLabel("Model ID").fill(model);
-  await dialog.getByRole("button", { name: "Create agent", exact: true }).click();
+  await dialog.getByRole("button", { name: "Create teammate", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(profileCard(page, name)).toBeVisible();
 }
@@ -55,18 +56,19 @@ test("profiles save separate SOUL, folder, provider, and model; edits and archiv
 
   const atlasCard = profileCard(page, "Atlas");
   await atlasCard.getByRole("button", { name: "Edit Atlas" }).click();
-  const edit = page.getByRole("dialog", { name: "Agent profile" });
+  const edit = page.getByRole("dialog", { name: "Teammate profile" });
   await expect(edit).toBeVisible();
-  await expect(edit.getByLabel("SOUL.md")).toHaveValue(atlas.soul);
-  await expect(edit.getByLabel("Agent color")).toHaveValue("blue");
+  await expect(edit.getByLabel("Role and working instructions")).toHaveValue(atlas.soul);
+  await edit.getByText("Advanced setup", { exact: false }).click();
+  await expect(edit.getByLabel("Color")).toHaveValue("blue");
   await expect(edit.getByText(`/QA/agents/${atlas.id}/SOUL.md`, { exact: true })).toBeVisible();
   await expect(edit.getByText("/QA/work/atlas", { exact: true })).toBeVisible();
-  await edit.getByLabel("Agent color").selectOption("lilac");
-  await edit.getByLabel("SOUL.md").fill("# Atlas\n\nCompare primary sources and keep a concise evidence trail.");
+  await edit.getByLabel("Color").selectOption("lilac");
+  await edit.getByLabel("Role and working instructions").fill("# Atlas\n\nCompare primary sources and keep a concise evidence trail.");
   await edit.getByLabel("Working folder").fill("/QA/work/atlas-revised");
   await edit.getByLabel("Provider").fill("provider-b");
   await edit.getByLabel("Model ID").fill("model-a-2");
-  await edit.getByRole("button", { name: "Save profile", exact: true }).click();
+  await edit.getByRole("button", { name: "Save teammate", exact: true }).click();
   await expect(edit).toHaveCount(0);
   expect(fixture.agents.get(atlas.id)).toMatchObject({
     color: "lilac",
@@ -79,9 +81,10 @@ test("profiles save separate SOUL, folder, provider, and model; edits and archiv
   await page.reload();
   const persisted = profileCard(page, "Atlas");
   await persisted.getByRole("button", { name: "Edit Atlas" }).click();
-  const reopened = page.getByRole("dialog", { name: "Agent profile" });
-  await expect(reopened.getByLabel("SOUL.md")).toHaveValue("# Atlas\n\nCompare primary sources and keep a concise evidence trail.");
-  await expect(reopened.getByLabel("Agent color")).toHaveValue("lilac");
+  const reopened = page.getByRole("dialog", { name: "Teammate profile" });
+  await expect(reopened.getByLabel("Role and working instructions")).toHaveValue("# Atlas\n\nCompare primary sources and keep a concise evidence trail.");
+  await reopened.getByText("Advanced setup", { exact: false }).click();
+  await expect(reopened.getByLabel("Color")).toHaveValue("lilac");
   await expect(reopened.getByLabel("Working folder")).toHaveValue("/QA/work/atlas-revised");
   await expect(reopened.getByLabel("Provider")).toHaveValue("provider-b");
   await expect(reopened.getByLabel("Model ID")).toHaveValue("model-a-2");
@@ -103,6 +106,68 @@ test("profiles save separate SOUL, folder, provider, and model; edits and archiv
   await expect(profileCard(page, "Forge")).toBeVisible();
 });
 
+test("capability access saves explicit empty state, repairs unavailable choices, and survives reload", async ({ page }) => {
+  const fixture = await mockWorkspace(page, {
+    agents: [{
+      id: "scoped", sessionId: "scoped-session", name: "Scoped reviewer", soul: "# Scoped reviewer\n\nReview release evidence.",
+      capabilityPolicy: { version: 1, tools: { mode: "allow", ids: ["web_search", "retired_tool"] }, skills: { mode: "allow", ids: ["qa-research"] } },
+    }],
+    agentCapabilities: {
+      version: 1,
+      tools: [
+        { id: "web_search", name: "Web search", group: "Research", description: "Search the public web.", available: true },
+        { id: "read_file", name: "Read files", group: "Files and code", description: "Read files available to Hermes.", available: true },
+        { id: "retired_tool", name: "Retired tool", group: "Unavailable", description: "This tool is no longer installed.", available: false },
+      ],
+      skills: [{ id: "qa-research", name: "QA research", group: "General", description: "Check primary sources.", available: true }],
+      notes: {
+        workingDirectory: "A working folder is not a filesystem sandbox.", skillBoundary: "File tools can still read skill files.",
+        delegation: "Restricted teammates cannot delegate.", runtime: "Legacy CLI and scheduled launches are blocked.",
+      },
+    },
+  });
+  await page.goto("/agents");
+
+  await page.getByRole("button", { name: "New teammate", exact: true }).click();
+  const create = page.getByRole("dialog", { name: "Create a teammate" });
+  await expect(create.getByText("0 tools · 0 skills", { exact: true })).toBeVisible();
+  await create.getByLabel("Teammate name").fill("No-access helper");
+  await create.getByLabel("Role and working instructions").fill("Summarize text supplied directly by the user.");
+  await create.getByRole("button", { name: "Create teammate", exact: true }).click();
+  await expect(create).toHaveCount(0);
+  expect(fixture.requests.createdAgents.at(-1).capabilityPolicy).toEqual({ version: 1, tools: { mode: "allow", ids: [] }, skills: { mode: "allow", ids: [] } });
+
+  const card = profileCard(page, "Scoped reviewer");
+  await card.getByRole("button", { name: "Edit Scoped reviewer" }).click();
+  const edit = page.getByRole("dialog", { name: "Teammate profile" });
+  await expect(edit.getByText("2 tools · 1 skills", { exact: true })).toBeVisible();
+  const tools = edit.locator("details").filter({ hasText: "Tools" }).first();
+  const skills = edit.locator("details").filter({ hasText: "Skills" }).first();
+  await expect(tools).toHaveAttribute("open", "");
+  await skills.locator("summary").click();
+  await page.waitForTimeout(3200);
+  await expect(skills).toHaveAttribute("open", "");
+  await tools.getByRole("checkbox", { name: "Selected only" }).check();
+  await expect(tools.getByText("Read files", { exact: true })).toHaveCount(0);
+  const retired = tools.getByRole("checkbox", { name: /Retired tool/ });
+  await retired.click();
+  await expect(retired).toHaveCount(0);
+  await expect(tools.getByText("1 selected", { exact: true })).toBeVisible();
+  await tools.getByRole("checkbox", { name: "Selected only" }).uncheck();
+  await tools.getByRole("checkbox", { name: /Read files/ }).check();
+  await edit.getByRole("button", { name: "Save teammate", exact: true }).click();
+  await expect(edit).toHaveCount(0);
+  expect(fixture.agents.get("scoped").capabilityPolicy).toEqual({ version: 1, tools: { mode: "allow", ids: ["web_search", "read_file"] }, skills: { mode: "allow", ids: ["qa-research"] } });
+
+  await page.reload();
+  await profileCard(page, "Scoped reviewer").getByRole("button", { name: "Edit Scoped reviewer" }).click();
+  const reopened = page.getByRole("dialog", { name: "Teammate profile" });
+  await expect(reopened.getByText("2 tools · 1 skills", { exact: true })).toBeVisible();
+  await expect(reopened.getByRole("checkbox", { name: /Web search/ })).toBeChecked();
+  await expect(reopened.getByRole("checkbox", { name: /Read files/ })).toBeChecked();
+  await expect(reopened.getByText("Retired tool", { exact: true })).toBeVisible();
+});
+
 test("running a saved profile leaves the main conversation selected and opens its named composer", async ({ page }) => {
   const sessions = [
     { id: "qa-main", name: "Main conversation", messages: [{ id: "main-note", role: "hermes", text: "Main conversation history." }] },
@@ -116,7 +181,7 @@ test("running a saved profile leaves the main conversation selected and opens it
   const card = profileCard(page, "Atlas");
   await card.getByRole("textbox", { name: "Task for Atlas" }).fill("Compare the two proposals and report the strongest evidence.");
   await card.getByRole("button", { name: "Run task", exact: true }).click();
-  await expect(card.getByText("Working", { exact: true })).toBeVisible();
+  await expect(card.getByText("Running", { exact: true })).toBeVisible();
   expect(fixture.requests.agentRuns).toHaveLength(1);
   expect(fixture.requests.agentRuns[0]).toMatchObject({ id: "atlas", sessionId: "atlas-session", text: "Compare the two proposals and report the strongest evidence." });
   expect(await page.evaluate(() => localStorage.getItem("panel.activeSession"))).toBe("qa-main");
@@ -184,9 +249,10 @@ test("Talk restores only valid selected profiles and shows their real run states
     window.dispatchEvent(new CustomEvent("panel-interface-preferences-change", { detail: next }));
   });
   await expect(page.locator(".talkWorkspace__presence")).toHaveAttribute("data-motion-active", "true");
+  await expect.poll(() => teammates.first().evaluate(node => getComputedStyle(node).animationName)).toBe("none");
+  await page.setViewportSize({ width: 1280, height: 720 });
   await expect.poll(() => teammates.first().evaluate(node => getComputedStyle(node).animationName)).toContain("companion-float");
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByRole("button", { name: "Bloub", exact: true }).click();
   const bloubMain = page.locator('.talkWorkspace__presence[data-main-avatar="bloub"]');
   await expect(bloubMain).toBeVisible();
@@ -206,26 +272,34 @@ test("Talk restores only valid selected profiles and shows their real run states
   await expect.poll(() => page.evaluate(() => localStorage.getItem("panel.selectedAgents.v1"))).toBe('["atlas"]');
   expect(fixture.requests.agentRuns).toEqual([]);
 
+  fixture.agents.set("remote", {
+    id: "remote", sessionId: "remote-session", name: "Remote", color: "sage", soul: "Review new work.",
+    provider: "provider-a", model: "model-a", workingDirectory: "/QA/work/remote", archivedAt: null,
+  });
+  await expect(teammates).toHaveCount(2, { timeout: 10000 });
+  await expect(teammates.getByText("Remote", { exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("panel.selectedAgents.v1"))).toBe('["atlas","remote"]');
+
   await forge.getByRole("button", { name: "Add Forge to Talk" }).click();
   await page.reload();
-  await expect(page.locator(".talkWorkspace__presence figure")).toHaveCount(2);
+  await expect(page.locator(".talkWorkspace__presence figure")).toHaveCount(3);
   expect(fixture.requests.agentRuns).toEqual([]);
 });
 
 test("stopping a delegated child sends its own run and child IDs while leaving its sibling active", async ({ page }) => {
   const fixture = await mockWorkspace(page, { delegations: [
-    { id: "child-a", runId: "parent-run", sessionId: "qa-main", name: "Research helper", task: "Check source one", status: "running", statusLabel: "Working", canStop: true },
-    { id: "child-b", runId: "parent-run", sessionId: "qa-main", name: "Review helper", task: "Check source two", status: "running", statusLabel: "Working", canStop: true },
+    { id: "child-a", delegationId: "generation-a", runId: "parent-run", sessionId: "qa-main", name: "Research helper", task: "Check source one", status: "running", statusLabel: "Working", canStop: true },
+    { id: "child-b", delegationId: "generation-b", runId: "parent-run", sessionId: "qa-main", name: "Review helper", task: "Check source two", status: "running", statusLabel: "Working", canStop: true },
   ] });
   await page.goto("/agents");
-  const research = page.getByRole("article", { name: "Research helper", exact: true });
-  const review = page.getByRole("article", { name: "Review helper", exact: true });
+  const research = page.getByRole("article", { name: "Temporary worker: Check source one", exact: true });
+  const review = page.getByRole("article", { name: "Temporary worker: Check source two", exact: true });
   await expect(research).toBeVisible();
   await expect(review).toBeVisible();
   await research.getByRole("button", { name: "Stop", exact: true }).click();
-  await expect(research.getByText("Stopped", { exact: true })).toBeVisible();
+  await expect(research.getByRole("strong").filter({ hasText: /^Stopped$/ })).toBeVisible();
   await expect(review.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
-  expect(fixture.requests.stoppedDelegations).toEqual([{ sessionId: "qa-main", runId: "parent-run", agentId: "child-a" }]);
+  expect(fixture.requests.stoppedDelegations).toEqual([{ sessionId: "qa-main", runId: "parent-run", agentId: "child-a", delegationId: "generation-a" }]);
   expect(fixture.delegations.find(agent => agent.id === "child-a").status).toBe("cancelled");
   expect(fixture.delegations.find(agent => agent.id === "child-b").status).toBe("running");
 });
@@ -235,12 +309,12 @@ test("profile dialog opens by keyboard on mobile, passes axe checks, and returns
   await page.emulateMedia({ reducedMotion: "reduce" });
   await mockWorkspace(page);
   await page.goto("/agents");
-  const trigger = page.getByRole("button", { name: "New agent", exact: true });
+  const trigger = page.getByRole("button", { name: "New teammate", exact: true });
   await trigger.focus();
   await page.keyboard.press("Enter");
-  const dialog = page.getByRole("dialog", { name: "New agent" });
+  const dialog = page.getByRole("dialog", { name: "Create a teammate" });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByLabel("Agent name")).toBeFocused();
+  await expect(dialog.getByLabel("Teammate name")).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const controls = dialog.locator("input:visible, textarea:visible, select:visible");
   for (const control of await controls.all()) {

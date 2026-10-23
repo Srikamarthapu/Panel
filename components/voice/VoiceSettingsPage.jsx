@@ -91,7 +91,7 @@ export default function VoiceSettingsPage() {
       </div>
 
       <div className="voiceSettings__layout">
-        <aside className="voiceSettings__sectionIntro"><span>01</span><h2>Conversation</h2><p>Your voice, model, and audio devices in one place.</p></aside>
+        <aside className="voiceSettings__sectionIntro"><span>01</span><h2>Conversation</h2><p>Your voice and audio devices in one place. Model selection lives in Models.</p></aside>
         <article className="voiceSettings__card">
           <VoiceDockSettings voice={voice} embedded />
           <label className="voiceSettings__row voiceSettings__language">

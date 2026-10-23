@@ -8,11 +8,12 @@ const thinking = { state: { ...initialWrapper.state, state: "thinking" }, effect
 test("text transport opts out of audio in body and Accept header", () => {
   const textRequest = voiceChatRequest({ text: "Hello", sessionId: "s1", textOnly: true });
   assert.equal(textRequest.headers.Accept, "application/json");
-  assert.deepEqual(JSON.parse(textRequest.body), { text: "Hello", sessionId: "s1", audio: false, stt_ms: 0 });
-  const voiceRequest = voiceChatRequest({ text: "Hello", sessionId: "s1", sttMs: 125 });
+  assert.deepEqual(JSON.parse(textRequest.body), { text: "Hello", sessionId: "s1", surface: "chat", audio: false, stt_ms: 0 });
+  const voiceRequest = voiceChatRequest({ text: "Hello", sessionId: "s1", surface: "talk", sttMs: 125 });
   assert.match(voiceRequest.headers.Accept, /audio\/mpeg/);
   assert.equal(JSON.parse(voiceRequest.body).audio, true);
   assert.equal(JSON.parse(voiceRequest.body).stt_ms, 125);
+  assert.equal(JSON.parse(voiceRequest.body).surface, "talk");
 });
 
 test("typed input carries textOnly through the real callChat effect", () => {
@@ -38,7 +39,6 @@ test("switching from continuous listening to text releases the microphone before
   assert.equal(result.state.continuousRequested, false);
   const kinds = result.effects.map((effect) => effect.kind);
   assert.ok(kinds.indexOf("stopAllTracks") < kinds.indexOf("callChat"));
-  assert.ok(kinds.includes("clearVadInterval"));
   assert.ok(kinds.includes("closeAudioContext"));
 });
 
@@ -49,14 +49,19 @@ test("typed input can explicitly preserve the active continuous session", () => 
   assert.deepEqual(result.effects, [{ kind: "callChat", text: "Hello", textOnly: true, preserveContinuous: true }]);
 });
 
-test("text completions append full results silently even during a later voice interaction", () => {
-  for (const state of ["idle", "listening", "capturing", "transcribing", "thinking", "speaking"]) {
+test("text completions append silently outside input ownership and wait during a live utterance", () => {
+  for (const state of ["idle", "listening", "thinking", "speaking"]) {
     const before = { state: { ...initialWrapper.state, state, config: { autoSpeak: false, muteOutput: true } }, effects: [] };
     const text = "Full result\n\n" + "b".repeat(7000);
     const result = reducer(before, { type: "SPEAK_COMPLETION", text, entryId: "text-result", textOnly: true });
     assert.equal(result.state.state, state);
     assert.equal(result.state.transcript[0].text, text);
     assert.deepEqual(result.effects, []);
+  }
+  for (const state of ["starting", "capturing", "transcribing"]) {
+    const before = { state: { ...initialWrapper.state, state, config: { autoSpeak: false, muteOutput: true } }, effects: [] };
+    const result = reducer(before, { type: "SPEAK_COMPLETION", text: "Held result", entryId: "held-result", textOnly: true });
+    assert.deepEqual(result, before);
   }
 });
 

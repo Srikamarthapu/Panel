@@ -50,7 +50,7 @@ test("scheduled tasks wait until due, serialize a session, and retain complete t
   const fakeLaunch = async input => {
     const run = runs.createAssistantRun({ ...input });
     launches += 1;
-    return runs.updateAssistantRun(run.id, { state: "active", pid: process.pid, executionActive: true });
+    return runs.updateAssistantRun(run.id, { state: "active", pid: process.pid, pidIdentity: storeHelpers.processIdentity(process.pid), executionActive: true });
   };
   await queue.tickWorkQueue({ now: scheduledAt - 1, launch: fakeLaunch });
   assert.equal(launches, 0);
@@ -124,6 +124,19 @@ test("worker lease permits one owner and readiness follows its heartbeat", () =>
   assert.ok(second);
   assert.notEqual(second.owner, first.owner);
   queue.releaseQueueWorker(second);
+});
+
+test("a legacy or recycled worker PID cannot hold the queue lease", () => {
+  reset();
+  fs.mkdirSync(process.env.PANEL_DATA_DIR, { recursive: true });
+  fs.writeFileSync(path.join(process.env.PANEL_DATA_DIR, "work-queue-worker.json"), JSON.stringify({
+    owner: "stale-owner", pid: process.pid, pidIdentity: "wrong-boot-and-start", running: true, lastHeartbeatAt: new Date().toISOString(),
+  }));
+  const acquired = queue.acquireQueueWorker();
+  assert.ok(acquired);
+  assert.notEqual(acquired.owner, "stale-owner");
+  assert.equal(queue.queueWorkerStatus().running, true);
+  queue.releaseQueueWorker(acquired);
 });
 
 test("real detached runner uses each selected folder and exact Hermes resume without permission bypass", async () => {
@@ -204,12 +217,12 @@ test("a quick follow-up waits for the previous terminal runner without overlappi
   const lingering = spawn(process.execPath, ["-e", "setTimeout(() => {}, 320)"], { stdio: "ignore" });
   const closed = new Promise(resolve => lingering.once("exit", resolve));
   const previous = runs.createAssistantRun({ id: "short-linger", sessionId: session.id, text: "First" });
-  runs.updateAssistantRun(previous.id, { state: "complete", response: "First answer", pid: lingering.pid, executionActive: true });
+  runs.updateAssistantRun(previous.id, { state: "complete", response: "First answer", pid: lingering.pid, pidIdentity: storeHelpers.processIdentity(lingering.pid), executionActive: true });
   let observedExited = false;
   const { EventEmitter } = await import("node:events");
   const spawnProcess = () => {
     observedExited = lingering.exitCode !== null;
-    const child = new EventEmitter(); child.pid = 2147483647; child.unref = () => {};
+    const child = new EventEmitter(); child.pid = process.pid; child.unref = () => {};
     queueMicrotask(() => child.emit("spawn")); return child;
   };
   try {
@@ -251,9 +264,25 @@ test("abandoned malformed locks recover, while a live owner's lock is preserved"
     assert.equal(withFileLock(file, () => "recovered"), "recovered");
     assert.equal(fs.existsSync(lock), false);
   }
-  fs.writeFileSync(lock, JSON.stringify({ pid: process.pid }));
+  fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, pidIdentity: "wrong-boot-and-start" }));
+  assert.equal(storeHelpers.withFileLock(file, () => "recovered reused pid"), "recovered reused pid");
+  fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, pidIdentity: storeHelpers.processIdentity(process.pid) }));
   const old = new Date(Date.now() - 20_000); fs.utimesSync(lock, old, old);
   assert.throws(() => storeHelpers.withFileLock(file, () => assert.fail("must not enter")), /busy/);
+  assert.equal(fs.existsSync(lock), true);
+  fs.unlinkSync(lock);
+});
+
+test("a live foreign lock survives an unavailable identity probe", () => {
+  reset();
+  const file = path.join(process.env.PANEL_DATA_DIR, "identity-unavailable.json");
+  fs.mkdirSync(process.env.PANEL_DATA_DIR, { recursive: true });
+  const lock = `${file}.lock`;
+  fs.writeFileSync(lock, JSON.stringify({ pid: 4242, pidIdentity: "expected-start-token" }));
+  assert.throws(() => storeHelpers.withFileLock(file, () => assert.fail("must not enter"), {
+    processAlive: pid => pid === 4242,
+    processIdentity: () => null,
+  }), /busy/);
   assert.equal(fs.existsSync(lock), true);
   fs.unlinkSync(lock);
 });

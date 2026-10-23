@@ -29,9 +29,67 @@ test("inside-loop settings preserve saved credentials and independent controls",
     assert.equal(fs.statSync(file).mode & 0o777, 0o600);
     assert.throws(() => saveJevRouterConfig({ directDispatch: "yes" }), /true or false/);
     assert.throws(() => saveJevRouterConfig({ apiKey: "a key with spaces" }), /without spaces/);
-    saveJevRouterConfig({ enabled: false, removeKey: true });
-    assert.equal(getJevRouterStatus().enabled, false);
+    saveJevRouterConfig({ enabled: false, preferences: { toolSelection: true, directDispatch: true, discordEnabled: true }, removeKey: true });
+    const disabled = getJevRouterStatus();
+    assert.equal(disabled.enabled, false);
+    assert.equal(disabled.toolSelection, false);
+    assert.equal(disabled.directDispatch, false);
+    assert.equal(disabled.discordEnabled, false);
+    assert.equal(JSON.parse(fs.readFileSync(file)).toolSelection, false);
+    assert.equal(disabled.preferences.toolSelection, true);
+    assert.equal(disabled.preferences.directDispatch, true);
+    assert.equal(disabled.preferences.monitorProgress, false);
+    const restored = saveJevRouterConfig({ enabled: true, apiKey: "second-test-key" });
+    assert.equal(restored.toolSelection, true);
+    assert.equal(restored.directDispatch, true);
+    assert.equal(restored.discordEnabled, true);
+    assert.equal(restored.monitorProgress, false);
     assert.equal(fs.readFileSync(file, "utf8").includes("private-test-key"), false);
+  } finally {
+    if (previousHome === undefined) delete process.env.HERMES_HOME;
+    else process.env.HERMES_HOME = previousHome;
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("legacy disabled config reports effective controls off and restores its saved choices", () => {
+  const previousHome = process.env.HERMES_HOME;
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "hermes-jev-disabled-test-"));
+  process.env.HERMES_HOME = directory;
+  try {
+    const file = path.join(directory, "control-center", "jev.json");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({
+      enabled: false,
+      discordEnabled: true,
+      modelRouting: true,
+      toolSelection: true,
+      directDispatch: true,
+      monitorProgress: false,
+      manageContext: true,
+      apiKey: "legacy-test-key",
+    }));
+
+    const disabled = getJevRouterStatus();
+    for (const key of ["discordEnabled", "modelRouting", "toolSelection", "directDispatch", "monitorProgress", "manageContext"]) {
+      assert.equal(disabled[key], false);
+    }
+    assert.deepEqual(disabled.preferences, {
+      discordEnabled: true,
+      modelRouting: true,
+      toolSelection: true,
+      directDispatch: true,
+      monitorProgress: false,
+      manageContext: true,
+    });
+
+    const restored = saveJevRouterConfig({ enabled: true });
+    assert.equal(restored.discordEnabled, true);
+    assert.equal(restored.modelRouting, true);
+    assert.equal(restored.toolSelection, true);
+    assert.equal(restored.directDispatch, true);
+    assert.equal(restored.monitorProgress, false);
+    assert.equal(restored.manageContext, true);
   } finally {
     if (previousHome === undefined) delete process.env.HERMES_HOME;
     else process.env.HERMES_HOME = previousHome;

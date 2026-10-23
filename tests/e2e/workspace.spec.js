@@ -6,6 +6,37 @@ const sessions = [
   { id: "qa-beta", name: "QA Beta", messages: [{ id: "beta-answer", role: "hermes", text: "Beta history stays in Beta." }] },
 ];
 const openSessions = page => page.getByRole("navigation", { name: "Workspace navigation" }).getByRole("link", { name: "Sessions", exact: true }).click();
+const completedEditOutcome = ({ state = "complete", active = false, toolStatus = active ? "in_progress" : "completed" } = {}) => ({
+  version: 1,
+  state,
+  finishedAt: active ? null : "2026-10-13T20:05:00.000Z",
+  execution: { active, stopping: active && state === "cancelled" },
+  summary: {
+    text: state === "complete" ? "Updated the formatter and checked the saved result." : "A stop was requested while the edit tool was still active.",
+    provenance: state === "complete" ? "agent" : "runtime",
+  },
+  observed: {
+    tools: [{
+      callId: "edit-formatter",
+      kind: "edit",
+      status: toolStatus,
+      startedAt: "2026-10-13T20:04:58.000Z",
+      finishedAt: ["completed", "failed"].includes(toolStatus) ? "2026-10-13T20:04:59.000Z" : null,
+      locations: [{ path: "/QA/projects/alpha/src/format.js", provenance: "runtime" }],
+    }],
+    files: [{ path: "/QA/projects/alpha/src/format.js", provenance: "runtime", kind: "edit" }],
+  },
+  verified: toolStatus !== "completed" ? {
+    status: "unavailable",
+    items: [],
+    note: "No completed edit receipt is available while the runtime is stopping.",
+  } : {
+    status: "available",
+    items: [{ kind: "file", path: "/QA/projects/alpha/src/format.js", source: "runtime_receipt", label: "edit completed" }],
+    note: "Panel retained the completed edit receipt. It does not prove the file's current contents.",
+  },
+  runtime: { provider: "provider-a", model: "model-a", provenance: "runtime" },
+});
 
 test("upgrade retains the legacy conversation ID and history without replaying import on reload", async ({ page }) => {
   const fixture = await mockWorkspace(page, { sessions: [] });
@@ -112,7 +143,9 @@ test("an unavailable saved working folder explains how to recover the session", 
 });
 
 test("a restored accepted run continues while sessions switch and returns to its original conversation", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 960 });
   const run = { id: "qa-pending-run", sessionId: "qa-alpha", state: "active", statusLabel: "Reading a file", textOnly: true };
+  const outcome = completedEditOutcome();
   const fixture = await mockWorkspace(page, { sessions: [{ ...sessions[0], activeRun: run }, sessions[1]] });
   let complete = false, speechRequests = 0;
   await page.route("**/api/voice/tts", route => { speechRequests++; return route.abort(); });
@@ -120,10 +153,10 @@ test("a restored accepted run continues while sessions switch and returns to its
     if (complete) {
       const record = fixture.records.get("qa-alpha");
       record.activeRun = null;
-      record.lastRun = { ...run, state: "complete", response: "The restored request finished." };
-      if (!record.messages.some(message => message.id === "pending-answer")) record.messages.push({ id: "pending-answer", role: "hermes", text: "The restored request finished." });
+      record.lastRun = { ...run, state: "complete", response: "The restored request finished.", outcome };
+      if (!record.messages.some(message => message.id === "pending-answer")) record.messages.push({ id: "pending-answer", role: "hermes", text: "The restored request finished.", outcome });
     }
-    return route.fulfill({ json: { run: { ...run, state: complete ? "complete" : "active", response: complete ? "The restored request finished." : "", updatedAt: new Date().toISOString() } } });
+    return route.fulfill({ json: { run: { ...run, state: complete ? "complete" : "active", response: complete ? "The restored request finished." : "", outcome: complete ? outcome : null, updatedAt: new Date().toISOString() } } });
   });
   await page.goto("/chat");
   const picker = page.getByRole("combobox", { name: "Switch session" });
@@ -136,6 +169,18 @@ test("a restored accepted run continues while sessions switch and returns to its
   complete = true;
   await expect(page.getByText("The restored request finished.", { exact: true })).toBeVisible({ timeout: 15000 });
   await expect(page.getByRole("button", { name: "Stop current response" })).toHaveCount(0);
+  const liveReview = page.getByText("Review work", { exact: true });
+  await expect(liveReview).toBeVisible();
+  await liveReview.click();
+  await expect(page.getByRole("heading", { name: "Completed action receipts", exact: true })).toBeVisible();
+  await expect(page.getByText("/QA/projects/alpha/src/format.js", { exact: true })).toBeVisible();
+  await expect(page.getByText("edit completed", { exact: true })).toBeVisible();
+  await expect(page.getByText("provider-a / model-a", { exact: true })).toBeVisible();
+  await page.screenshot({ path: "artifacts/panel-quality-20261013/outcome-review.png", fullPage: true });
+  await page.reload();
+  await expect(page.getByText("The restored request finished.", { exact: true })).toBeVisible();
+  await page.getByText("Review work", { exact: true }).click();
+  await expect(page.getByText("/QA/projects/alpha/src/format.js", { exact: true })).toBeVisible();
   expect(fixture.requests.stoppedRuns).toEqual([]);
   expect(speechRequests).toBe(0);
 });
@@ -162,17 +207,95 @@ test("an interrupted run leaves thinking and shows a recoverable record after re
   await expect(page.getByRole("button", { name: /^QA Beta / })).toBeEnabled();
   await page.goto("/chat");
   await expect(page.getByText(message, { exact: true })).toBeVisible();
-  await expect(page.getByText("Request interrupted", { exact: true })).toBeVisible();
+  await expect(page.locator(".conversationPastError").getByText("Request interrupted", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Stop current response" })).toHaveCount(0);
+});
+
+test("a streamed partial answer remains beside its terminal failure and survives reconciliation", async ({ page }) => {
+  const run = { id: "qa-partial-failure", sessionId: "qa-alpha", state: "active", textOnly: true, createdAt: new Date().toISOString() };
+  const partial = "I checked the workspace and found the configuration that controls this request.";
+  const failure = "Hermes could not authenticate the final runtime request.";
+  const fixture = await mockWorkspace(page, { sessions: [{ ...sessions[0], activeRun: run }, sessions[1]] });
+  await page.route("**/api/voice/runs**", route => {
+    const url = new URL(route.request().url());
+    const record = fixture.records.get("qa-alpha");
+    const terminal = { ...run, state: "error", error: failure, partialResponse: partial, updatedAt: new Date().toISOString() };
+    record.activeRun = null;
+    record.lastRun = terminal;
+    record.session.updatedAt = terminal.updatedAt;
+    record.messages = [
+      ...record.messages.filter(item => !item.id.startsWith(`${run.id}:`)),
+      { id: `${run.id}:partial`, role: "hermes", text: partial, partialResponse: true, interrupted: true },
+      { id: `${run.id}:result`, runId: run.id, role: "hermes", text: failure, isError: true },
+    ];
+    if (url.pathname.endsWith("/events")) {
+      return route.fulfill({
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+        body: `event: text\ndata: ${JSON.stringify({ runId: run.id, seq: 1, messageId: "answer", text: partial })}\n\nevent: run\ndata: ${JSON.stringify(terminal)}\n\n`,
+      });
+    }
+    return route.fulfill({ json: { run: terminal } });
+  });
+
+  await page.goto("/chat");
+  await expect(page.getByText(partial, { exact: true })).toBeVisible();
+  await expect(page.getByText("Partial response · request interrupted", { exact: true })).toBeVisible();
+  await expect(page.locator(".conversationPastError").getByText("Request interrupted", { exact: true })).toBeVisible();
+  await expect(page.getByText(failure, { exact: true }).first()).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByText(partial, { exact: true })).toBeVisible();
+  await expect(page.getByText("Partial response · request interrupted", { exact: true })).toBeVisible();
+  await expect(page.locator(".conversationPastError").getByText("Request interrupted", { exact: true })).toBeVisible();
+  await expect(page.getByText(failure, { exact: true }).first()).toBeVisible();
+});
+
+test("a terminal stream receipt stays pending until a later API confirmation", async ({ page }) => {
+  const run = { id: "qa-stop-run", sessionId: "qa-alpha", state: "active", statusLabel: "Editing a file", textOnly: true };
+  await mockWorkspace(page, { sessions: [{ ...sessions[0], activeRun: run }, sessions[1]] });
+  let streamDelivered = false;
+  let stopConfirmed = false;
+  let confirmedApiReads = 0;
+  await page.route("**/api/voice/runs**", async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/events")) {
+      streamDelivered = true;
+      const streamed = { ...run, state: "cancelled", error: "Stop requested.", outcome: completedEditOutcome({ state: "cancelled", active: true }) };
+      return route.fulfill({ status: 200, headers: { "content-type": "text/event-stream" }, body: `event: run\ndata: ${JSON.stringify(streamed)}\n\n` });
+    }
+    if (streamDelivered) {
+      if (stopConfirmed) confirmedApiReads++;
+      return route.fulfill({ json: { run: { ...run, state: "cancelled", error: stopConfirmed ? "Stopped." : "Stop requested.", outcome: completedEditOutcome({ state: "cancelled", active: !stopConfirmed }) } } });
+    }
+    return route.fulfill({ json: { run } });
+  });
+  await page.goto("/chat");
+  await expect(page.getByText("Review work", { exact: true })).toBeVisible();
+  await expect(page.getByText("Stopping", { exact: true })).toBeVisible();
+  await page.getByText("Review work", { exact: true }).click();
+  await expect(page.getByText("Waiting for the runtime to confirm the stop.", { exact: true })).toBeVisible();
+  stopConfirmed = true;
+  await expect(page.getByText("Stopped", { exact: true })).toBeVisible({ timeout: 15000 });
+  expect(confirmedApiReads).toBeGreaterThan(0);
+  await expect(page.getByText("Review completed actions before retrying.", { exact: true })).toBeVisible();
 });
 
 test("tasks retain the requested prompt, schedule, cancellation, and result history", async ({ page }) => {
   const fixture = await mockWorkspace(page, { sessions, tasks: [
-    { id: "qa-completed", sessionId: "qa-beta", prompt: "Completed source check", state: "complete", response: "Three sources were checked." },
+    { id: "qa-completed", sessionId: "qa-beta", prompt: "Completed source check", state: "complete", response: "Three sources were checked.", outcome: completedEditOutcome() },
+    { id: "qa-stopping", sessionId: "qa-alpha", prompt: "Stop the formatter update", state: "cancelled", error: "Stop requested.", outcome: completedEditOutcome({ state: "cancelled", active: true }) },
     { id: "qa-interrupted-task", sessionId: "qa-alpha", prompt: "Interrupted source check", state: "interrupted", error: "The worker stopped before this request finished." },
   ] });
   await page.goto("/tasks");
   await expect(page.getByText("Worker ready", { exact: true })).toBeVisible();
+  const stoppingTask = page.getByRole("article").filter({ hasText: "Stop the formatter update" });
+  await expect(stoppingTask.locator(".workTag").getByText("Stopping", { exact: true })).toBeVisible();
+  await stoppingTask.getByText("Review work", { exact: true }).click();
+  await expect(stoppingTask.getByText("1 in progress", { exact: true })).toBeVisible();
+  const stoppingRecord = fixture.queue.find(item => item.id === "qa-stopping");
+  stoppingRecord.outcome = completedEditOutcome({ state: "cancelled", active: false, toolStatus: "in_progress" });
+  await expect(stoppingTask).toHaveCount(0, { timeout: 8000 });
   await page.getByRole("button", { name: "Queue a task", exact: true }).click();
   const prompt = "Read the project notes, compare the two proposals, and write a clear recommendation. Preserve the supporting links.";
   await page.getByRole("textbox", { name: "What should your agent do?" }).fill(prompt);
@@ -187,14 +310,21 @@ test("tasks retain the requested prompt, schedule, cancellation, and result hist
   await queued.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(queued).toHaveCount(0);
   await page.getByRole("button", { name: /^History / }).click();
-  await expect(queued.getByText("Stopped", { exact: true })).toBeVisible();
+  await expect(queued.locator(".workTag").getByText("Stopped", { exact: true })).toBeVisible();
   const interruptedTask = page.getByRole("article").filter({ hasText: "Interrupted source check" });
-  await expect(interruptedTask.getByText("Interrupted", { exact: true })).toBeVisible();
+  await expect(interruptedTask.locator(".workTag").getByText("Interrupted", { exact: true })).toBeVisible();
+  await interruptedTask.getByText("Review work", { exact: true }).click();
   await expect(interruptedTask.getByText("The worker stopped before this request finished.", { exact: true })).toBeVisible();
   expect(fixture.requests.cancellations).toEqual([{ id: fixture.queue.at(-1).id, action: "cancel" }]);
   const completed = page.getByRole("article").filter({ hasText: "Completed source check" });
-  await completed.getByText("Read result", { exact: true }).click();
-  await expect(completed.getByText("Three sources were checked.", { exact: true })).toBeVisible();
+  await completed.getByText("Review work", { exact: true }).click();
+  await expect(completed.getByText("Updated the formatter and checked the saved result.", { exact: true })).toBeVisible();
+  await expect(completed.getByText("edit completed", { exact: true })).toBeVisible();
+  const stopped = page.getByRole("article").filter({ hasText: "Stop the formatter update" });
+  await expect(stopped.locator(".workTag").getByText("Stopped", { exact: true })).toBeVisible();
+  await stopped.getByText("Review work", { exact: true }).click();
+  await expect(stopped.getByText("1 unfinished", { exact: true })).toBeVisible();
+  await expect(stopped.getByText("1 in progress", { exact: true })).toHaveCount(0);
   await completed.getByRole("button", { name: "QA Beta", exact: true }).click();
   await expect(page).toHaveURL(/\/chat$/);
   await expect(page.getByRole("heading", { name: "QA Beta", exact: true })).toBeVisible();
